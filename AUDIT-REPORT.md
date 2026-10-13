@@ -127,7 +127,10 @@ were resolved on the `audit-followups` branch (see the section above).
 - Test suite: **936 passed, 4 skipped** (the skips need Person B's separate repository).
 - Live Claude checks re-run on this branch: **24/24** end-to-end and **16/16** planning
   (`benchmarks/integration/claude_*_20261013-1759*.json`).
-- Fresh clone installed from `requirements-lock.txt`: see the last commit on this branch.
+- Fresh clone (commit `1b571e9`) installed from `requirements-lock.txt` in a new Python 3.14
+  environment: **936 passed, 4 skipped**; controlled evaluation **28/28**; anomaly ground
+  truth **TP=4, FP=0, FN=1**; `scripts.check_clean_checkout` **passed**; the working tree
+  stayed clean.
 
 ## Verification at the end of `claude-planner`
 
