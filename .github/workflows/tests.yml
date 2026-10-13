@@ -1,0 +1,35 @@
+# Runs the test suite on every push and pull request. No private telemetry and
+# no API key are needed: the tests use synthetic data and never call a model.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt -r requirements-web.txt
+      - name: Run tests
+        run: python -m pytest -q
+      - name: Controlled evaluation (synthetic data, tree must stay clean)
+        run: |
+          python -m scripts.evaluate_agent
+          python -m scripts.evaluate_anomaly_ground_truth --output data/ci-anomaly --evidence data/ci-anomaly-evidence.json
+          git status --porcelain
+          test -z "$(git status --porcelain)"
+        shell: bash
