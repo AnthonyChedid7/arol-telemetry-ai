@@ -54,7 +54,8 @@ class HeadDiagnosticPlanner(RulePlanner):
         torque_line = (
             f"The torque check flagged {torque['anomaly_count']:,} of "
             f"{torque['sample_size']:,} finite observations "
-            f"({results[1][1]['meta'].get('population', 'all recorded statuses, including No Load')})."
+            "(" + results[1][1]["meta"].get("population", "all recorded statuses, including No Load")
+            .replace(" (default)", "") + ")."
         )
         limits = (
             "These are recorded exact +1 events, so production coverage is not "
