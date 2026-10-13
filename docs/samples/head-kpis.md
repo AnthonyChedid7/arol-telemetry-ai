@@ -1,7 +1,7 @@
 # Telemetry report
 
 *Query:* Success rate per head for machine DEMO from 2026-02-01T00:00:00 until 2026-02-01T00:06:40
-*Generated:* 2026-10-09 01:51  |  *Planner:* rules  |  *Schema:* 1.0
+*Generated:* 2026-10-13 20:32  |  *Planner:* rules  |  *Schema:* 1.0
 
 ## 1. Goal
 
@@ -10,7 +10,7 @@ Describe observed-event KPIs with explicit denominators within the requested sco
 ## 2. Data used
 
 - Pool `sample` from the **person_a_pool** source, 798 closure events across 2 heads.
-- Window 2026-02-01T00:00:01 to 2026-02-01T00:06:39 (plant-local, timezone unconfirmed).
+- Window 2026-02-01T00:00:01 to 2026-02-01T00:06:39 (clock: as recorded; timezone unconfirmed).
 - Machines: DEMO.
 - Events loaded for the requested scope: 798 of 798 stored observed events in this pool.
 - **Warning:** These are observed exact +1 closure events. count_delta=1 and inferred=False describe the supplied events. Counter discontinuities are not reconstructed, and total production completeness is not measured by this adapter.
@@ -18,7 +18,7 @@ Describe observed-event KPIs with explicit denominators within the requested sco
 
 ## 3. Analyses executed
 
-- `success_rate_per_head` (agent: kpi) - n=180, 3.54 ms - ok
+- `success_rate_per_head` (agent: kpi) - n=180, 9.38 ms - ok
   - filters: start>=2026-02-01T00:00:00, end<2026-02-01T00:06:40, machine_id=DEMO
 
 ## 4. Findings
@@ -56,13 +56,13 @@ Describe observed-event KPIs with explicit denominators within the requested sco
 
 ## Trace
 
-1 tool call(s), 14 ms total.
+1 tool call(s), 31 ms total.
 
 | # | step | tool | n | ms | ok |
 |---|------|------|---|----|----|
 | 0 | plan |  |  |  | yes |
 | 1 | load_pool |  |  |  | yes |
-| 2 | tool_call | success_rate_per_head | 180 | 3.54 | yes |
+| 2 | tool_call | success_rate_per_head | 180 | 9.38 | yes |
 | 3 | validate |  |  |  | yes |
 
 ## Figures

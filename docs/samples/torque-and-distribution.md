@@ -1,7 +1,7 @@
 # Telemetry report
 
 *Query:* Summarize torque and show its distribution with 10 bins for machine DEMO from 2026-02-01T00:00:00 until 2026-02-01T00:06:40 for head 1 for successful closures
-*Generated:* 2026-10-09 01:51  |  *Planner:* rules  |  *Schema:* 1.0
+*Generated:* 2026-10-13 20:32  |  *Planner:* rules  |  *Schema:* 1.0
 
 ## 1. Goal
 
@@ -10,7 +10,7 @@ Run torque_stats and torque_distribution within the explicitly requested event s
 ## 2. Data used
 
 - Pool `sample` from the **person_a_pool** source, 90 closure events across 1 heads.
-- Window 2026-02-01T00:05:10 to 2026-02-01T00:06:39 (plant-local, timezone unconfirmed).
+- Window 2026-02-01T00:05:10 to 2026-02-01T00:06:39 (clock: as recorded; timezone unconfirmed).
 - Machines: DEMO.
 - Events loaded for the requested scope: 90 of 798 stored observed events in this pool.
 - **Warning:** These are observed exact +1 closure events. count_delta=1 and inferred=False describe the supplied events. Counter discontinuities are not reconstructed, and total production completeness is not measured by this adapter.
@@ -18,20 +18,22 @@ Run torque_stats and torque_distribution within the explicitly requested event s
 
 ## 3. Analyses executed
 
-- `torque_stats` (agent: analytics) - n=90, 2.15 ms - ok
-  - filters: status_filter='successful', start>=2026-02-01T00:00:00, end<2026-02-01T00:06:40, head_id in ['H01'], machine_id=DEMO, torque is non-null and finite
-- `torque_distribution` (agent: analytics) - n=90, 2.72 ms - ok
-  - filters: start>=2026-02-01T00:00:00, end<2026-02-01T00:06:40, head_id in ['H01'], machine_id=DEMO, status_filter='successful', torque is non-null and finite
+- `torque_stats` (agent: analytics) - n=90, 4.11 ms - ok
+  - filters: population: successful closures only (status 0), start>=2026-02-01T00:00:00, end<2026-02-01T00:06:40, head_id in ['H01'], machine_id=DEMO, torque is non-null and finite
+- `torque_distribution` (agent: analytics) - n=90, 6.39 ms - ok
+  - filters: population: successful closures only (status 0), start>=2026-02-01T00:00:00, end<2026-02-01T00:06:40, head_id in ['H01'], machine_id=DEMO, torque is non-null and finite
 
 ## 4. Findings
 
 **torque_stats**
+- Events analysed: successful closures only (status 0).
 - Finite torque observations: **90**.
 - Mean: **2.02444 Nm**; minimum: **1.96 Nm**; maximum: **2.8 Nm**.
 - Sample standard deviation (ddof=1): **0.0896424 Nm**.
 - These summary statistics do not establish whether torque meets engineering limits.
 
 **torque_distribution**
+- Events analysed: successful closures only (status 0).
 - Histogram: 90 finite observations in 10 bins.
 - Bin-edge range: 1.96 to 2.8 Nm.
 - Bin counts: [65, 24, 0, 0, 0, 0, 0, 0, 0, 1].
@@ -53,14 +55,14 @@ Run torque_stats and torque_distribution within the explicitly requested event s
 
 ## Trace
 
-2 tool call(s), 18 ms total.
+2 tool call(s), 56 ms total.
 
 | # | step | tool | n | ms | ok |
 |---|------|------|---|----|----|
 | 0 | plan |  |  |  | yes |
 | 1 | load_pool |  |  |  | yes |
-| 2 | tool_call | torque_stats | 90 | 2.15 | yes |
-| 3 | tool_call | torque_distribution | 90 | 2.72 | yes |
+| 2 | tool_call | torque_stats | 90 | 4.11 | yes |
+| 3 | tool_call | torque_distribution | 90 | 6.39 | yes |
 | 4 | validate |  |  |  | yes |
 
 ## Figures
