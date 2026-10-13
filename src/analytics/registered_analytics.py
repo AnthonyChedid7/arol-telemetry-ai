@@ -8,31 +8,33 @@ from ..common.runtime import current_config
 from . import registered_torque  # noqa: F401 - register the first tool too
 from .event_filters import filter_events
 from .torque_distribution import torque_distribution, _prepare_torque_events
-from .trend_analysis import torque_trend, DRIFT_EPSILON
+from .trend_analysis import torque_trend, _classify_drift
 from .anomaly_detection import detect_torque_anomalies
 from .head_correlation import (
     head_correlation, _validate_head_ids, _matched_torque_pairs,
 )
+from .torque_population import NO_LOAD_CLASS, describe, optional_config, select_population
 
 SCOPE = ["start", "end", "head_id", "machine_id", "status_filter"]
+# Same value as config.yaml analytics.drift_threshold_nm_per_hour; used only
+# when a configuration omits the key.
+DEFAULT_DRIFT_NM_PER_HOUR = 0.05
 OBSERVED_NOTE = (
     "Only supplied observed exact +1 events are analysed. "
     "Counter discontinuities are not reconstructed. "
 )
 
 
-def _finish(result, scoped, applied, status_filter, *, units, notes):
-    used = _prepare_torque_events(scoped, status_filter).collect()
-    filters = list(applied)
-    if status_filter is not None:
-        filters.append(f"status_filter={status_filter!r}")
+def _finish(result, scoped, population, inner, label, applied, *, units, notes):
+    used = _prepare_torque_events(population, inner).collect()
+    filters = [f"population: {label}"] + list(applied)
     filters.append("torque is non-null and finite")
     if result["sample_size"] == 0:
         notes += " No finite torque observations matched."
-    return envelope(
+    return describe(envelope(
         result, n=result["sample_size"], filters_applied=filters,
         units=units, window=data_window(used), notes=OBSERVED_NOTE + notes,
-    )
+    ), label, scoped, optional_config())
 
 
 @tool(name="torque_distribution", description=(
@@ -43,9 +45,10 @@ def registered_distribution(events, *, bins=10, status_filter=None,
     scoped, applied = filter_events(
         events, start=start, end=end, head_id=head_id, machine_id=machine_id,
     )
-    result = torque_distribution(scoped, bins=bins, status_filter=status_filter)
+    population, inner, label = select_population(scoped, status_filter)
+    result = torque_distribution(population, bins=bins, status_filter=inner)
     return _finish(
-        result, scoped, applied, status_filter,
+        result, scoped, population, inner, label, applied,
         units={"bin_edges": "Nm", "counts": "observations"},
         notes=("Bins are left-inclusive and right-exclusive except the final bin, "
                "which includes its right edge. A histogram alone does not diagnose a fault."),
@@ -61,14 +64,29 @@ def registered_trend(events, *, status_filter=None,
     scoped, applied = filter_events(
         events, start=start, end=end, head_id=head_id, machine_id=machine_id,
     )
-    result = torque_trend(scoped, current_config(), status_filter=status_filter)
+    population, inner, label = select_population(scoped, status_filter)
+    config = current_config()
+    result = torque_trend(population, config, status_filter=inner)
+    # Audit finding: a numerical epsilon called any non-zero slope "drift".
+    # Drift now needs the configured practical rate of change.
+    per_hour = (config.get("analytics") or {}).get(
+        "drift_threshold_nm_per_hour", DEFAULT_DRIFT_NM_PER_HOUR)
+    if not (isinstance(per_hour, (int, float)) and not isinstance(per_hour, bool) and per_hour > 0):
+        raise ValueError("analytics.drift_threshold_nm_per_hour must be a positive number of Nm per hour")
+    slope = result["drift_slope_per_second"]
+    result["drift_threshold_nm_per_hour"] = float(per_hour)
+    result["drift_slope_nm_per_hour"] = None if slope is None else slope * 3600
+    result["drift_detected"], result["drift_direction"] = _classify_drift(
+        slope, threshold_per_second=per_hour / 3600)
     return _finish(
-        result, scoped, applied, status_filter,
+        result, scoped, population, inner, label, applied,
         units={"moving_average": "Nm", "drift_slope_per_second": "Nm/s",
+               "drift_slope_nm_per_hour": "Nm/h", "drift_threshold_nm_per_hour": "Nm/h",
                "window_seconds": "s"},
         notes=(f"The configured trailing window is {result['window_seconds']} seconds. "
-               f"The direction uses a numerical epsilon of {DRIFT_EPSILON:g} Nm/s, "
-               "not an engineering or statistical significance threshold. "
+               f"Drift is reported only when the latest-window slope of the moving average "
+               f"exceeds {per_hour:g} Nm per hour (configured practical threshold, not yet "
+               "validated with AROL, and not a statistical significance test). "
                "Selected observations are pooled; this is not a separate trend per head. "
                "The requested scope supplies all available history for this calculation."),
     )
@@ -83,11 +101,12 @@ def registered_anomalies(events, *, status_filter=None,
     scoped, applied = filter_events(
         events, start=start, end=end, head_id=head_id, machine_id=machine_id,
     )
+    population, inner, label = select_population(scoped, status_filter)
     result = detect_torque_anomalies(
-        scoped, current_config(), status_filter=status_filter,
+        population, current_config(), status_filter=inner,
     )
     return _finish(
-        result, scoped, applied, status_filter,
+        result, scoped, population, inner, label, applied,
         units={"mean": "Nm", "std": "Nm", "expected_min": "Nm",
                "expected_max": "Nm", "anomaly_rate": "fraction"},
         notes=(f"Configured limits: {result['expected_min']} to {result['expected_max']} Nm; "
@@ -118,11 +137,17 @@ def registered_head_correlation(events, *, head_a, head_b,
             raise ValueError("Select one machine_id before comparing heads")
         if selected.select("head_id", "ts").is_duplicated().any():
             raise ValueError("Duplicate head/timestamp observations make correlation pairing ambiguous")
+    # Audit finding: two heads idling together (No Load, torque ~0) produced
+    # r=0.99 on real data although closures alone give r=0.44. Correlation and
+    # the per-head summaries therefore use closures only.
+    if "error_class" in selected.columns:
+        selected = selected.filter(pl.col("error_class").fill_null("") != NO_LOAD_CLASS)
     result = head_correlation(selected, head_a, head_b)
     matched = _matched_torque_pairs(selected, head_a, head_b)
     response = envelope(
         result, n=result["matched_torque_samples"],
-        filters_applied=applied + [f"head pair: {head_a}, {head_b}"],
+        filters_applied=applied + [f"head pair: {head_a}, {head_b}",
+                                   "population: closures, excluding No Load cycles"],
         units={"mean_torque": "Nm", "torque_correlation": "dimensionless",
                "success_rate_difference": "fraction",
                "success_rate_difference_percentage_points": "percentage points"},
@@ -135,4 +160,5 @@ def registered_head_correlation(events, *, head_a, head_b,
                "not deduplicated or paired across machines."),
     )
     response["meta"]["correlation_data_window"] = data_window(matched)
+    response["meta"]["population"] = "closures, excluding No Load cycles"
     return response

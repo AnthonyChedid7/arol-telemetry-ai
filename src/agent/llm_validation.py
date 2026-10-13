@@ -87,7 +87,7 @@ def strict_calls(message, lookup):
             if type(value) is not int or not 0 < value <= MAX_BINS:
                 raise ValueError(f"bins must be an integer from 1 to {MAX_BINS}")
         elif key == "status_filter":
-            if not (type(value) is int or value == "successful"):
+            if not (type(value) is int or value in ("successful", "all_statuses")):
                 raise ValueError("status_filter must be an integer or 'successful'; omit unused filters")
         elif key in {"head_id", "head_a", "head_b", "machine_id", "start", "end"}:
             if not isinstance(value, str) or not value.strip():
@@ -142,8 +142,10 @@ def validate_tool_call(name, args, lookup):
             if type(value) is not int or not 0 < value <= MAX_BINS:
                 raise ValueError(f"bins must be an integer from 1 to {MAX_BINS}")
         elif key == "status_filter":
-            if not ((type(value) is int and 0 <= value <= MAX_STATUS_CODE) or value == "successful"):
-                raise ValueError("status_filter must be a status code from 0 to 65535 or 'successful'")
+            if not ((type(value) is int and 0 <= value <= MAX_STATUS_CODE)
+                    or value in ("successful", "all_statuses")):
+                raise ValueError("status_filter must be a status code from 0 to 65535, "
+                                 "'successful' or 'all_statuses'")
         elif key == "bucket":
             if value not in ("hour", "day"):
                 raise ValueError("bucket must be 'hour' or 'day'")

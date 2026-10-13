@@ -37,18 +37,21 @@ PARAM_VOCABULARY: dict[str, dict] = {
     "status_filter": {
         "oneOf": [
             {"type": "null"},
-            {"type": "string", "enum": ["successful"]},
+            {"type": "string", "enum": ["successful", "all_statuses"]},
             {"type": "integer"},
         ],
         "description": (
-            "Omit or use null for all statuses; successful means status 0; "
-            "an integer selects that exact status code."
+            "Omit for closures excluding No Load cycles (the default); "
+            "'successful' means status 0; 'all_statuses' also includes No Load "
+            "cycles; an integer selects that exact status code."
         ),
     },
     "start": {"type": "string",
-              "description": "Window start, ISO-8601, plant-local. Inclusive."},
+              "description": "Window start, YYYY-MM-DDTHH:MM:SS in the data's clock "
+                             "(UTC as recorded). Inclusive."},
     "end": {"type": "string",
-            "description": "Window end, ISO-8601, plant-local. Exclusive."},
+            "description": "Window end, YYYY-MM-DDTHH:MM:SS in the data's clock "
+                           "(UTC as recorded). Exclusive."},
     "head_id": {"type": ["string", "array"],
                 "description": "Head, e.g. 'H05', or a list of heads. Omit for all heads."},
     "machine_id": {"type": "string",

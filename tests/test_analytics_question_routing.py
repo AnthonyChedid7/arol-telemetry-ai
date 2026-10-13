@@ -38,13 +38,25 @@ def events():
     })
 
 def direct(name, events, cfg, params):
+    """Person A result for the events the registered tool describes.
+
+    Callers pass already-selected events; registered tools exclude No Load
+    cycles by default and apply the configured drift threshold to the trend.
+    """
     if name == "torque_distribution":
         return torque_distribution(events, **params)
     if name == "torque_trend":
-        return torque_trend(events, cfg, **params)
+        from src.analytics.trend_analysis import _classify_drift
+        result = torque_trend(events, cfg, **params)
+        per_hour = (cfg.get("analytics") or {}).get("drift_threshold_nm_per_hour", 0.05)
+        slope = result["drift_slope_per_second"]
+        result["drift_threshold_nm_per_hour"] = per_hour
+        result["drift_slope_nm_per_hour"] = None if slope is None else slope * 3600
+        result["drift_detected"], result["drift_direction"] = _classify_drift(slope, per_hour / 3600)
+        return result
     if name == "detect_torque_anomalies":
         return detect_torque_anomalies(events, cfg, **params)
-    return head_correlation(events, **params)
+    return head_correlation(events.filter(pl.col("error_class").fill_null("") != "No Load"), **params)
 
 
 VALID = [

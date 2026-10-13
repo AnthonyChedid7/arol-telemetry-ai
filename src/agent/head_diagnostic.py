@@ -53,8 +53,8 @@ class HeadDiagnosticPlanner(RulePlanner):
             peer_line = f"A peer success comparison is unavailable for {head}: {reason}."
         torque_line = (
             f"The torque check flagged {torque['anomaly_count']:,} of "
-            f"{torque['sample_size']:,} finite observations across all recorded "
-            "statuses, including No Load."
+            f"{torque['sample_size']:,} finite observations "
+            f"({results[1][1]['meta'].get('population', 'all recorded statuses, including No Load')})."
         )
         limits = (
             "These are recorded exact +1 events, so production coverage is not "

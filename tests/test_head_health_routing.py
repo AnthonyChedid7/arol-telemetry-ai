@@ -65,7 +65,7 @@ def test_scoped_head_health_uses_peer_population_and_focus_torque(cfg):
     assert answer["trace"].to_dict()["n_tool_calls"] == 2
     assert "Focus minus peer median" in answer["markdown"]
     assert "Configured limits" in answer["markdown"]
-    assert "includes all observed statuses" in answer["markdown"]
+    assert "excludes No Load cycles" in answer["markdown"]
     assert "do not support a yes/no fault verdict" in answer["markdown"]
 
 

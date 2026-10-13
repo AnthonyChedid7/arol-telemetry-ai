@@ -11,6 +11,11 @@ data:
 
   n_heads: null
 
+  # Timestamps are used exactly as recorded. The AROL files appear to be UTC: each
+  # file named for a day starts at 16:00 the day before, which suggests the plant runs on UTC+8, but this is not
+  # confirmed, so nothing is converted. Shown in every report.
+  timezone: as recorded, apparently UTC (plant local time unconfirmed, likely UTC+8)
+
   units:
     AppTorque: Nm
 
@@ -26,6 +31,11 @@ analytics:
   drift_window_seconds: 3600
   idle_window_seconds: 300
   anomaly_sigma: 3.0
+  # Drift is reported only above this rate of change of the moving average.
+  # Practical value pending AROL validation (expected range is 1.5-2.5 Nm).
+  drift_threshold_nm_per_hour: 0.05
+  # Events whose status contradicts torque at this boundary are flagged.
+  status_torque_mismatch_nm: 0.5
 
 agent:
   llm:

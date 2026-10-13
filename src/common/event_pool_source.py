@@ -8,6 +8,7 @@ import polars as pl
 from . import registry, schema
 from ..analytics.event_filters import filter_events
 from ..analytics.torque_stats import _apply_status_filter
+from ..analytics.torque_population import ALL_STATUSES
 from ..ingestion.adapter import PERSON_A_COLUMNS, adapt, describe
 from ..ingestion.event_pool import scan_event_pool
 
@@ -44,8 +45,8 @@ def _read_parameters(calls):
         raise ValueError("Read scope must use valid canonical parameters without coercion: "
                          + "; ".join(errors + notes))
     status = args.get("status_filter")
-    if status is not None and not (type(status) is int or status == "successful"):
-        raise ValueError("status_filter must be an integer or 'successful'")
+    if status is not None and not (type(status) is int or status in ("successful", ALL_STATUSES)):
+        raise ValueError("status_filter must be an integer, 'successful' or 'all_statuses'")
     scope = {key: args[key] for key in ("start", "end", "head_id", "machine_id") if key in args}
     if name == "head_correlation":
         if args["head_a"] == args["head_b"]:
@@ -271,7 +272,9 @@ class EventPoolSource:
         paths = [(manifest_path.parent / entry["event_parquet"]).resolve() for entry in partitions]
         signatures = _stat_signature(paths)
         selected, _ = filter_events(lazy, **scope)
-        selected = _apply_status_filter(selected, status)
+        # "all_statuses" and the default both need every status at load; the
+        # registered torque tools then decide which population they describe.
+        selected = _apply_status_filter(selected, None if status == ALL_STATUSES else status)
         n_selected = selected.select(pl.len()).collect().item()
         if n_selected > self.max_events:
             raise ScopeTooLarge(

@@ -49,7 +49,8 @@ def test_command_saves_real_report_and_trace_with_exact_scope(setup, capsys):
     assert reply['planned_calls'] == [['torque_stats', {
         'head_id': 'H01', 'machine_id': 'M1',
         'start': '2026-02-01T00:00:01', 'end': '2026-02-01T00:00:05'}]]
-    assert reply['results'][0][1]['result']['sample_size'] == 4
+    # Five H01 events in the window; the status-2 No Load cycle is excluded by default.
+    assert reply['results'][0][1]['result']['sample_size'] == 3
     assert reply['trace']['n_tool_calls'] == 1
     assert Path(reply['artifacts']['report']).read_text() == reply['markdown']
     saved_trace = json.loads(Path(reply['artifacts']['trace']).read_text())

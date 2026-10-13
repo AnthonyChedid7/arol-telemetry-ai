@@ -45,7 +45,10 @@ values are torque questions.
 - A closure event is one cap being applied. Status 0 is a successful closure. \
 "Good closures", "successful closures", "OK caps" mean status_filter \
 "successful". Other integer status codes are errors; use that integer only when \
-the user names an exact code. Questions about all closures need no status filter.
+the user names an exact code. Questions about all closures need no status filter: \
+torque tools then exclude "No Load" cycles (the head cycled without a cap, torque \
+about 0 Nm) by default. Use status_filter "all_statuses" only when the user \
+explicitly wants No Load cycles included.
 - Success rate, yield, failure/reject rate and quality per head are KPI \
 questions (success_rate, success_rate_per_head). "Which head is worst/best" \
 means rank_heads_by_success. "Is head N worse than the others", "how does head N \
@@ -102,7 +105,8 @@ all), do not call any tool. Instead reply with one short clarification question 
 saying what is missing. Never guess a time window the user did not imply.\
 """
 
-_FRIENDLY_STATUS = {"successful": "successful closures only"}
+_FRIENDLY_STATUS = {"successful": "successful closures only",
+                    "all_statuses": "every status, including No Load cycles"}
 
 
 def _text(value) -> str:
@@ -125,7 +129,8 @@ def describe_calls(calls) -> str:
         if "machine_id" in args:
             bits.append(f"machine {args['machine_id']}")
         if "start" in args or "end" in args:
-            bits.append(f"{args.get('start', 'beginning')} -> {args.get('end', 'end of data')}")
+            bits.append(f"{args.get('start', 'beginning')} -> {args.get('end', 'end of data')} "
+                        "(data clock, apparently UTC)")
         if "status_filter" in args:
             value = args["status_filter"]
             bits.append(_FRIENDLY_STATUS.get(value, f"status {value}"))
@@ -169,7 +174,8 @@ def _context_text(context: dict) -> str:
     elif machines:
         lines.append("Machines in this data pool: " + ", ".join(machines))
     if summary.get("ts_min") and summary.get("ts_max"):
-        lines.append(f"Data available from {summary['ts_min']} to {summary['ts_max']}")
+        lines.append(f"Data available from {summary['ts_min']} to {summary['ts_max']} "
+                     "(timestamps as recorded, apparently UTC; use this clock for all times)")
     if summary.get("heads"):
         lines.append("Heads in this data pool: " + ", ".join(summary["heads"]))
     return "\n".join(lines) or "No pool details are available."

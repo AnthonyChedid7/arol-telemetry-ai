@@ -110,6 +110,6 @@ def test_schema_exposes_supported_filters():
     }
     assert properties["status_filter"]["oneOf"] == [
         {"type": "null"},
-        {"type": "string", "enum": ["successful"]},
+        {"type": "string", "enum": ["successful", "all_statuses"]},
         {"type": "integer"},
     ]

@@ -184,11 +184,28 @@ def _finding_torque_stats(result, meta):
         "- These summary statistics do not establish whether torque "
         "meets engineering limits."
     )
-    return lines
+    return _population_lines(meta) + lines
 
 
 def _analytics_number(value):
     return "n/a" if value is None else f"{value:.6g}"
+
+
+def _population_lines(meta):
+    """Which events a torque result describes, and known status/torque disagreements."""
+    lines = []
+    if meta.get("population"):
+        lines.append(f"- Events analysed: {meta['population']}.")
+    mismatch = meta.get("status_torque_mismatches") or {}
+    ok_low, no_load_high = mismatch.get("ok_with_low_torque"), mismatch.get("no_load_with_torque")
+    if ok_low or no_load_high:
+        lines.append(
+            f"- Status/torque disagreements in the selected scope: {ok_low or 0:,} "
+            f"'Closure OK' events below {mismatch['threshold_nm']:g} Nm and "
+            f"{no_load_high or 0:,} 'No Load' events at or above it. The controller "
+            "updates Status one reading after the count, so these events probably "
+            "carry the previous cycle's status. They are flagged, not corrected.")
+    return lines
 
 
 def _finding_torque_distribution(result, meta):
@@ -212,19 +229,30 @@ def _finding_torque_distribution(result, meta):
             f"{zoom['outside_count']:,} fall outside this zoom but remain in the "
             "full-range histogram. Both panels use the requested bin count."
         )
-    return lines
+    return _population_lines(meta) + lines
 
 
 def _finding_torque_trend(result, meta):
     if result["sample_size"] == 0:
         return ["- No finite torque observations matched; no trend can be estimated."]
-    return [
+    lines = [
         f"- Moving average uses a {result['window_seconds']} s trailing window over "
         f"{result['sample_size']:,} finite observations.",
-        f"- Latest-window slope: {_analytics_number(result['drift_slope_per_second'])} Nm/s; "
-        f"numerical direction: {result['drift_direction']}.",
-        "- This numerical signal alone does not establish an engineering problem or its cause.",
     ]
+    threshold = result.get("drift_threshold_nm_per_hour")
+    if threshold is None:  # direct use of the Person A function
+        lines.append(f"- Latest-window slope: {_analytics_number(result['drift_slope_per_second'])} Nm/s; "
+                     f"numerical direction: {result['drift_direction']}.")
+    elif result["drift_detected"]:
+        lines.append(f"- **Drift detected ({result['drift_direction']})**: the latest-window slope is "
+                     f"{_analytics_number(result['drift_slope_nm_per_hour'])} Nm per hour, beyond the "
+                     f"configured {threshold:g} Nm per hour.")
+    else:
+        lines.append(f"- No drift beyond the configured {threshold:g} Nm per hour "
+                     f"(latest-window slope {_analytics_number(result['drift_slope_nm_per_hour'])} Nm per hour; "
+                     f"{result['drift_direction'].replace('_', ' ')}).")
+    lines.append("- This signal alone does not establish an engineering problem or its cause.")
+    return _population_lines(meta) + lines
 
 
 def _finding_torque_anomalies(result, meta):
@@ -240,7 +268,7 @@ def _finding_torque_anomalies(result, meta):
         lines.append(f"- Example: {item['head_id']} at {item['ts']}, "
                      f"{_analytics_number(item['torque'])} Nm; reason: {item['reason']}.")
     lines.append("- Flags describe the configured checks; they do not identify a physical cause.")
-    return lines
+    return _population_lines(meta) + lines
 
 
 def _finding_head_correlation(result, meta):
@@ -251,6 +279,9 @@ def _finding_head_correlation(result, meta):
         "- Person A denominator: non-null error_class other than No Load. "
         "This is distinct from the cap-present KPI denominator.",
     ]
+    if meta.get("population"):
+        lines.insert(0, f"- Events analysed: {meta['population']} (pairs where both heads "
+                        "closed a cap in the same second).")
     for side in ("head_a", "head_b"):
         head = result[side]
         lines.append(f"- {head['head_id']}: {head['event_count']:,} events; "
@@ -390,8 +421,8 @@ def assemble(query, plan, results, pool_meta, trace, *, min_n=30) -> str:
          f"source, {pool_meta.get('n_events', 0):,} closure events "
          f"across {len(pool_meta.get('heads', []))} heads."),
         f"- Window {pool_meta.get('ts_min')} to {pool_meta.get('ts_max')} "
-        f"(plant-local, "
-        f"{pool_meta.get('timezone') or 'timezone unconfirmed'}).",
+        f"(clock: "
+        f"{pool_meta.get('timezone') or 'as recorded; timezone unconfirmed'}).",
         f"- Machines: {', '.join(pool_meta.get('machines', [])) or 'n/a'}.",
     ]
     if pool_meta.get("pool_total_events") is not None and pool_meta.get('n_raw_readings') is None:
@@ -451,9 +482,9 @@ def assemble(query, plan, results, pool_meta, trace, *, min_n=30) -> str:
     ):
         limits.append(
             "- This head-health check describes observed events and configured "
-            "torque flags. The torque check includes all observed statuses, "
-            "including No Load and cap-absent events; inspect event classes "
-            "behind flags. Confirm engineering torque limits, source rows, "
+            "torque flags. The torque check covers closures and excludes No Load "
+            "cycles; a few events can still carry the previous cycle's status "
+            "(see the status/torque disagreement count). Confirm engineering torque limits, source rows, "
             "and comparable operating conditions before deciding whether a "
             "head has a fault; these results do not support a yes/no fault verdict."
         )

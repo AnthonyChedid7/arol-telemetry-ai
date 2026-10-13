@@ -10,7 +10,7 @@ from polars.testing import assert_frame_equal
 
 from src.analytics import registered_analytics  # noqa: F401
 from src.analytics.torque_distribution import torque_distribution
-from src.analytics.trend_analysis import torque_trend
+from src.analytics.trend_analysis import torque_trend, _classify_drift
 from src.analytics.anomaly_detection import detect_torque_anomalies
 from src.analytics.head_correlation import head_correlation
 from src.common import registry
@@ -54,14 +54,30 @@ CASES = [
 ]
 
 
+def closures(events):
+    return events.filter(pl.col("error_class").fill_null("") != "No Load")
+
+
 def direct(name, events, cfg, params):
+    """What each registered tool must return, computed with the Person A functions.
+
+    The registered tools describe closures (No Load cycles excluded) unless a
+    status is requested, and the trend applies the configured drift threshold.
+    """
+    selected = closures(events) if params.get("status_filter") is None else events
     if name == "torque_distribution":
-        return torque_distribution(events, **params)
+        return torque_distribution(selected, **params)
     if name == "torque_trend":
-        return torque_trend(events, cfg, **params)
+        result = torque_trend(selected, cfg, **params)
+        per_hour = cfg["analytics"].get("drift_threshold_nm_per_hour", 0.05)
+        slope = result["drift_slope_per_second"]
+        result["drift_threshold_nm_per_hour"] = per_hour
+        result["drift_slope_nm_per_hour"] = None if slope is None else slope * 3600
+        result["drift_detected"], result["drift_direction"] = _classify_drift(slope, per_hour / 3600)
+        return result
     if name == "detect_torque_anomalies":
-        return detect_torque_anomalies(events, cfg, **params)
-    return head_correlation(events, **params)
+        return detect_torque_anomalies(selected, cfg, **params)
+    return head_correlation(closures(events), **params)
 
 
 @pytest.mark.parametrize("name, params", CASES)
@@ -155,7 +171,7 @@ def test_correlation_never_pairs_different_machines(events, cfg):
         arguments=dict(params, machine_id="M1"),
     )
     assert selected["ok"] is True
-    assert selected["result"] == head_correlation(events, "H01", "H02")
+    assert selected["result"] == head_correlation(closures(events), "H01", "H02")
 
 
 def test_duplicate_pairing_is_rejected_without_removing_rows(events, cfg):
@@ -217,8 +233,10 @@ def test_reports_describe_results_without_claiming_machine_health(events, cfg, n
         assert "Person A denominator" in text
         assert "Rates are computed over cap-present" not in text
     elif name == "torque_trend":
-        assert "Nm/s" in text
-        assert "not an engineering or statistical significance threshold" in text
+        assert "Nm per hour" in text
+        assert "not a statistical significance test" in response["meta"]["notes"]
+    if name != "head_correlation":
+        assert "Events analysed: closures, excluding No Load cycles (default)" in text
 
 
 def test_orchestrator_supplies_trusted_config(events, cfg, tmp_path):

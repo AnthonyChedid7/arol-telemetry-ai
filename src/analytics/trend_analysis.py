@@ -268,13 +268,17 @@ def _calculate_drift_slope(
 
 def _classify_drift(
     slope: float | None,
+    threshold_per_second: float = DRIFT_EPSILON,
 ) -> tuple[bool, str]:
     """
     Convert the numerical trend slope into an
     interpretable drift signal.
 
-    A tiny epsilon is used only to avoid classifying
-    floating-point numerical noise as real movement.
+    By default a tiny epsilon is used only to avoid
+    classifying floating-point numerical noise as real
+    movement. The registered tool passes the configured
+    practical threshold instead (audit finding: with the
+    epsilon, any non-zero slope counted as drift).
     """
 
     if slope is None:
@@ -283,13 +287,13 @@ def _classify_drift(
             "insufficient_data",
         )
 
-    if slope > DRIFT_EPSILON:
+    if slope > threshold_per_second:
         return (
             True,
             "upward",
         )
 
-    if slope < -DRIFT_EPSILON:
+    if slope < -threshold_per_second:
         return (
             True,
             "downward",

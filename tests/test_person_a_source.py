@@ -47,10 +47,14 @@ def test_counter_discontinuities_do_not_become_closures(handoff):
     assert events["count_delta"].to_list() == [1] * 4
     assert events["inferred"].to_list() == [False] * 4
 
-    response = call_tool("torque_stats", events)
+    response = call_tool("torque_stats", events, status_filter="all_statuses")
     assert response["ok"] is True
     assert response["result"]["mean"] == 4.0
     assert response["result"]["sample_size"] == 4
+    # By default the No Load event (status 3, 3.0 Nm) is not a closure.
+    closures = call_tool("torque_stats", events)
+    assert closures["result"]["sample_size"] == 3
+    assert closures["result"]["mean"] == pytest.approx(13 / 3)
 
 
 def test_source_preserves_original_fields_and_honest_metadata(handoff):

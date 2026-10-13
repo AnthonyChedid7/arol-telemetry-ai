@@ -59,9 +59,11 @@ def test_orchestrator_answers_from_actual_event_parquet(setup):
     answer = Orchestrator(cfg=cfg).answer("Average torque", pool="fixture")
     assert answer["status"] == "ok"
     response = answer["results"][0][1]
-    assert response["result"]["sample_size"] == 4
-    assert response["result"]["mean"] == 4.0
-    assert "Mean: **4 Nm**" in answer["markdown"]
+    # The status-3 event (No Load, 3.0 Nm) is not a closure and is excluded by default.
+    assert response["result"]["sample_size"] == 3
+    assert response["result"]["mean"] == pytest.approx(13 / 3)
+    assert "Mean: **4.33333 Nm**" in answer["markdown"]
+    assert "Events analysed: closures, excluding No Load cycles (default)" in answer["markdown"]
     assert answer["pool_meta"]["n_events"] == 4
     assert answer["trace"].to_dict()["n_tool_calls"] == 1
 
@@ -78,7 +80,7 @@ def test_report_and_trace_are_saved(setup):
     assert trace["n_tool_calls"] == 1
     call = next(step for step in trace["steps"] if step["kind"] == "tool_call")
     assert call["tool"] == "torque_stats"
-    assert call["n"] == 4
+    assert call["n"] == 3
     assert call["ok"] is True
 
 

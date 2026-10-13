@@ -26,7 +26,8 @@ def _parse_canonical_torque_request(query):
                 "'for head 5', 'for machine M1', 'on YYYY-MM-DD', or "
                 "'from <ISO timestamp> until <ISO timestamp>' (end exclusive). "
                 "Statistics, distribution, trend and anomalies also accept "
-                "'for successful closures' or 'for status 0'. Distribution "
+                "'for successful closures', 'for status 0' or 'including No Load' "
+                "(No Load cycles are excluded by default). Distribution "
                 "accepts 'with 10 bins'. Head comparison accepts machine and "
                 "time scope only. Supported combinations are statistics with distribution, "
                 "or trend with anomalies. Relative dates, exclusions, other combinations "
@@ -69,6 +70,7 @@ def _parse_canonical_torque_request(query):
         ("success", r"(?:for\s+)?successful\s+closures(?=\s|$)"),
         ("status", r"(?:for\s+)?status\s+(-?\d+)(?=\s|$)"),
         ("all", r"(?:for\s+)?all\s+closures(?=\s|$)"),
+        ("every", r"(?:for\s+)?(?:all\s+statuses|every\s+status|including\s+no\s+load(?:\s+cycles)?)(?=\s|$)"),
         ("bins", r"with\s+(\d+)\s+bins(?=\s|$)"),
         ("date", r"on\s+(\d{4}-\d{2}-\d{2})(?=\s|$)"),
         ("range", r"from\s+(\S+)\s+until\s+(\S+)(?=\s|$)"),
@@ -98,7 +100,10 @@ def _parse_canonical_torque_request(query):
             elif kind == "status":
                 added = {"status_filter": int(match.group(1))}
             elif kind == "all":
+                # Closures exclude No Load cycles, which is the tools' default.
                 added = {"status_filter": None}
+            elif kind == "every":
+                added = {"status_filter": "all_statuses"}
             elif kind == "bins":
                 number = int(match.group(1))
                 if tool != "torque_distribution" or not 1 <= number <= MAX_BINS:
