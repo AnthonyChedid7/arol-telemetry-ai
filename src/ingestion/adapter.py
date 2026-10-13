@@ -121,7 +121,9 @@ def adapt(events, *, pool_id: str, redecode: bool = False
         out = out.drop(["error_class", "reject_signal", "cap_present"]) \
                  .hstack(decoded)
 
-    out = out.sort(["ts", "head_index"])
+    # nulls_last matches the note above (Polars sorts nulls first by default);
+    # maintain_order keeps equal keys in their original order.
+    out = out.sort(["ts", "head_index"], nulls_last=True, maintain_order=True)
     out = schema.conform(out)
 
     notes.append(

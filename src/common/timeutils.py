@@ -100,17 +100,19 @@ def shift_name(ts: pl.Series | pl.Expr):
 def parse_bound(value) -> datetime | None:
     """Parse a `start`/`end` parameter. Returns None for None/empty.
 
-    Accepts an ISO-8601 string, a date, or a datetime. A timezone-aware value
-    has its offset dropped rather than converted, because the event table is
-    plant-local naive and silently shifting a user's window would be worse
-    than ignoring an offset they probably did not mean to supply.
+    Accepts an ISO-8601 string, a date, or a naive datetime. A timezone-aware
+    value is rejected, exactly like the bound parser the registered tools use
+    (analytics.event_filters._bound): event timestamps are naive UTC, and
+    silently dropping an offset would shift the user's window.
     """
     if value is None or value == "":
         return None
     if isinstance(value, datetime):
-        return value.replace(tzinfo=None)
+        if value.tzinfo is not None:
+            raise ValueError("timezone-aware bounds are not supported; use naive UTC timestamps")
+        return value
 
-    text = str(value).strip().replace("Z", "+00:00")
+    text = str(value).strip()
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
@@ -124,4 +126,6 @@ def parse_bound(value) -> datetime | None:
             raise ValueError(
                 f"could not parse timestamp {value!r}; expected ISO-8601"
             ) from exc
-    return parsed.replace(tzinfo=None)
+    if parsed.tzinfo is not None:
+        raise ValueError("timezone-aware bounds are not supported; use naive UTC timestamps")
+    return parsed
