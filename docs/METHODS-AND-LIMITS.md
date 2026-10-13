@@ -92,7 +92,13 @@ specification.
 The default rules planner parses supported questions, preserves explicit
 scope, and asks for clarification on unsupported or ambiguous wording. The
 bounded local Ollama option validates one proposed torque analysis against
-the deterministic grammar before dispatch. All numeric findings come from
+the deterministic grammar before dispatch. The Claude planner (Anthropic
+API, `src/agent/claude_planner.py`) maps everyday wording to any registered
+tool; its proposals are validated for names, types, supported combinations,
+pool heads and data range before data load, and its prose is used only as a
+clarification question. Its live checks (16/16 planning, 24/24 end-to-end on
+a three-day pool) measure a small hand-written question set, not general
+language accuracy. All numeric findings come from
 registered deterministic tools, not model prose. Each run records planned
 calls, data load, results and trace. Controlled tests and synthetic labels
 show software behavior, while the recorded real-data comparisons demonstrate

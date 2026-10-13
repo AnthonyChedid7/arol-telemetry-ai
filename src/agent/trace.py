@@ -68,9 +68,10 @@ class Trace:
     def save(self, trace_dir) -> Path:
         out = Path(trace_dir)
         out.mkdir(parents=True, exist_ok=True)
-        stamp = self.started_at.strftime("%Y%m%d-%H%M%S")
+        stamp = self.started_at.strftime("%Y%m%d-%H%M%S-%f")
         path = out / f"trace-{stamp}.json"
-        path.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
+        with path.open("x", encoding="utf-8") as handle:  # never overwrite another trace
+            handle.write(json.dumps(self.to_dict(), indent=2))
         return path
 
     def to_markdown(self) -> str:

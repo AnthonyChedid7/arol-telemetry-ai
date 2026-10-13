@@ -64,6 +64,14 @@ the short evidence-based answer, detailed report, trace, and tool results.
 existing scope validator rejects head-health and KPI questions; the web demo
 does not present it as a general answer mode.
 
+`--planner claude` (and the website's default when `ANTHROPIC_API_KEY` is set)
+lets Claude read everyday wording, such as "is spindle 4 behaving normally on
+Feb 1 between 9 and 10?", and choose among all registered tools. Check the
+report's "Interpreted as" line. Without a key or internet, the deterministic
+rules answer and the trace says `claude->rules (fallback)`. For a reliable
+live demo, set the key in the terminal that starts Streamlit and keep the
+rules switch in the sidebar as the offline backup.
+
 The event source caps loaded rows using `data.max_loaded_events` (default
 1,000,000). A broad request asks for narrower scope without collecting the
 entire 54,722,936-event pool. Capping KPIs report explicit cap-present

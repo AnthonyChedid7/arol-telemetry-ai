@@ -10,7 +10,7 @@ Branch: `claude-planner` (cloned from `EddyKhoury/arol-telemetry-ai`, commit `93
 
 ---
 
-## 1. How the agent understands a question today
+## 1. How the agent understood questions before this branch (historical)
 
 There are three planners, chosen with `agent.planner` (default `rules`):
 
@@ -97,10 +97,10 @@ Suggestion: do **B** now. C can be added later as an optional, clearly labelled
 | `src/agent/claude_planner.py` *(new)* | `ClaudePlanner`: builds the system prompt (domain glossary: head 5 = `H05`, "successful closures" = status 0, end time exclusive, machine IDs case-sensitive, configured thresholds are off-limits, ask instead of guessing), sends all 12 tool specs from the registry, reads the `tool_use` blocks from the response, validates them, and returns a `Plan`. No tool call → clarification. Network or auth error → rules fallback (recorded in `last_error`, which the orchestrator already labels as `claude->rules (fallback)`). |
 | `src/agent/llm_validation.py` | Generalise `strict_calls` so it validates proposals for **all** registered tools (not only the 5 torque ones), and add type rules for `bucket` and list-valued `head_id`. It keeps the "never repair or drop arguments" rule. The Ollama path keeps its current behaviour. |
 | `src/agent/planner.py` | `get_planner()` accepts `"claude"`. The `rules` / `diagnostic` / `llm` (Ollama) planners are **left untouched**, so Eddy's verified paths and all existing tests keep working, and you can compare both planners side by side. |
-| Context passed to Claude | Selected machine and the pool's time range (from the manifest). This way "this morning", "the first hour" or "on the 1st" resolve to real timestamps instead of today's real-world date. |
+| Context passed to Claude | Selected machine, the pool's head list and time range (from the manifest). As implemented, "the first hour" or "on the 1st" resolve to real timestamps; relative days such as "this morning" get a clarification question on multi-day pools. |
 | `src/agent/report.py` | Add the "Interpreted as" line when the plan came from Claude. |
 | `scripts/demo_agent.py` | `--planner` gets the `claude` choice. |
-| `scripts/web_demo.py` | Planner selectable (sidebar toggle or `AROL_PLANNER` env var). The default stays `diagnostic`, so the demo works without a key. When the Claude planner proposes the head-check pair (`compare_head_success` + `detect_torque_anomalies`), reuse the existing diagnostic explanation. |
+| `scripts/web_demo.py` | Planner selectable (sidebar toggle or `AROL_PLANNER` env var). As implemented, the default is `claude` when `ANTHROPIC_API_KEY` is set and `diagnostic` otherwise, so the demo still works without a key. When the Claude planner proposes the head-check pair (`compare_head_success` + `detect_torque_anomalies`), reuse the existing diagnostic explanation. |
 | `tests/test_claude_planner.py` *(new)* | Offline tests using a fake Anthropic client: tool_use → plan, bad arguments rejected, no tool → clarification, missing key / network error → labelled fallback, model prose never becomes a finding. The existing test suite must still pass unchanged. |
 | `README.MD` | Short "Using the Claude planner" section: how to set the API key, cost, fallback. |
 
@@ -119,7 +119,7 @@ Suggestion: do **B** now. C can be added later as an optional, clearly labelled
 
 ## 4. Cost estimate
 
-One question = one API call with about 4,000 input tokens (system prompt + 12 tool schemas)
+*Measured after implementation:* the system prompt and 12 tool schemas are about 5,500 tokens and are cached after the first question, so a question costs well under one cent (24 end-to-end questions: about $0.16). The original estimate, kept for reference: one API call with about 4,000 input tokens (system prompt + 12 tool schemas)
 and a few hundred output tokens.
 - Claude Opus 5.5: roughly **$0.02–0.04 per question**. A full demo session of 50 questions costs about $1–2.
 - Prompt caching on the system prompt + tools can reduce repeated input cost. I'll turn it on.
@@ -157,4 +157,4 @@ and a few hundred output tokens.
    "Interpreted as" line and the report look right.
 
 Estimated work: about half a day of changes plus testing. Everything stays on the
-`experiment` branch and nothing is pushed until you say so.
+`claude-planner` branch and nothing is pushed until you say so.

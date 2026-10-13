@@ -64,5 +64,9 @@ def generate(target=None):
 
 
 if __name__ == "__main__":
-    for report in generate():
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__ + " Overwrites docs/samples unless --output is given.")
+    parser.add_argument("--output", type=Path, help="Write the samples here instead of docs/samples")
+    for report in generate(parser.parse_args().output):
         print(report)

@@ -11,8 +11,9 @@ under it; filling it with real sample sizes and real caveats is cheap here
 because every envelope already carries `n`.
 
 Findings are rendered by deterministic templates, one per tool. No model is
-involved in producing a number or the sentence around it, so the same query
-produces the same report text every time.
+involved in producing a number or the sentence around it, so the same plan
+produces the same report text every time. (With the Claude planner the plan
+itself can vary between runs; the "Interpreted as" line shows which plan ran.)
 """
 
 from __future__ import annotations
@@ -534,6 +535,9 @@ def _next_checks(ok_results, failed) -> list[str]:
 def save(markdown: str, report_dir, stem="report") -> Path:
     out = Path(report_dir)
     out.mkdir(parents=True, exist_ok=True)
-    path = out / f"{stem}-{datetime.now().strftime('%Y%m%d-%H%M%S')}.md"
-    path.write_text(markdown, encoding="utf-8")
+    # Microseconds keep two reports delivered in the same second apart, and
+    # mode "x" refuses to overwrite one if they still collide.
+    path = out / f"{stem}-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.md"
+    with path.open("x", encoding="utf-8") as handle:
+        handle.write(markdown)
     return path

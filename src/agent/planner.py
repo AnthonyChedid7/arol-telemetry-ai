@@ -13,7 +13,7 @@ report path end to end without a model in the way, it is the determinism
 baseline the LLM planner is checked against, and it is the fallback if the API
 is unreachable during the demo. `agent.planner` in config.yaml selects one.
 
-Neither planner ever computes a number. It chooses tools and arguments; the
+No planner ever computes a number. It chooses tools and arguments; the
 tools do the arithmetic. That separation is the project's central claim.
 """
 

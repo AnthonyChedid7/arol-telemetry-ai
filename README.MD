@@ -1,6 +1,6 @@
 # AROL Telemetry AI
 
-An industrial telemetry analysis project for an AROL capping machine. It converts timestamped, per-head counter readings into **observed closure events**, lets a scoped question select registered analyses, and produces a Markdown report with a JSON execution trace. The normal demo uses deterministic question routing; a local Ollama planner is available for a narrower set of torque questions, and a [Claude planner](#claude-planner-everyday-wording) understands everyday wording across all tools.
+An industrial telemetry analysis project for an AROL capping machine. It converts timestamped, per-head counter readings into **observed closure events**, lets a scoped question select registered analyses, and produces a Markdown report with a JSON execution trace. The CLI routes questions deterministically by default; a [Claude planner](#claude-planner-everyday-wording) understands everyday wording across all tools (the website's default when an Anthropic key is set), and a local Ollama planner is available for a narrower set of torque questions. In every mode the numbers come from deterministic tools, never from a model.
 
 > **Scope of the numbers:** An event represents an observed counter change of exactly `+1` between successive readings. Larger jumps and decreases are measured but are not reconstructed into individual closures. Results therefore describe **observed events**, not all physical production.
 
@@ -22,7 +22,9 @@ An industrial telemetry analysis project for an AROL capping machine. It convert
 
 - Python **3.12** and `git`. The examples use a Unix/macOS shell; on Windows, activate `.venv` with the equivalent Windows command.
 - Enough free disk space for your private CSV files and generated raw/event Parquet partitions if you plan to build a real pool. The repository does **not** include those private CSVs or built pools.
-- Ollama and a downloaded model **only if** you choose the optional LLM planner. Rules routing, tests, and the controlled evaluation need no model.
+- Ollama and a downloaded model **only if** you choose the optional local LLM planner. Rules routing, tests, and the controlled evaluation need no model.
+- An Anthropic API key, internet access and a small API budget **only if** you use the [Claude planner](#claude-planner-everyday-wording). Without them everything else works and the website uses the rules.
+- Tested with Python 3.12 (Linux/macOS) and Python 3.14.3 on Windows 11 (full suite passing on both).
 
 From a new checkout:
 
@@ -32,6 +34,7 @@ cd arol-telemetry-ai
 python3.12 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install -r requirements-web.txt   # only for the Streamlit website
 .venv/bin/python -m pytest tests -q
 ```
 
@@ -58,6 +61,8 @@ For a committed, clean Git checkout, you can also run:
 ```bash
 .venv/bin/python -m scripts.check_clean_checkout
 ```
+
+Run it **before** `scripts.evaluate_agent`, or commit/remove the evidence file that the evaluator writes to `benchmarks/integration/`: the clean-checkout check refuses to run when untracked files are present.
 
 This runs tests and the controlled evaluation from a temporary detached checkout with the current virtual environment. It requires `git status --short` to show no changes and does not test dependency installation, private telemetry, or a live model. In a previous release review the clean checkout reported **848 passed, 4 skipped**, then **28/28** controlled cases; these are recorded historical results, not promised counts for future revisions. Current results come from the commands you run.
 
@@ -124,7 +129,7 @@ or recreate them using `.venv/bin/python -m scripts.generate_sample_reports`.
 
 Every question gets its own Markdown report and JSON trace under `data/demo_runs/session-.../question-.../`. The report states the filters, event population, definitions, numerical findings, and limits; the trace lists planning, loading, tool calls, and any clarification or error. Unsupported or ambiguous questions produce `needs_clarification` with **zero analysis tool calls**. For example, asking an unrelated general-knowledge question does not turn this project into a general chatbot. The CLI returns exit status `2` for a non-`ok` result, while still saving the report and trace.
 
-For a local head check, run `.venv/bin/streamlit run scripts/web_demo.py` from the repository root and open the local URL it prints. The page clearly shows the selected machine. Ask `Is there any problem with head 4?` and it will request a bounded time window before reading events. With a window, it compares confirmed cap-present success against eligible peers and checks torque flags through registered tools. The short diagnostic answer and the detailed report state the observed evidence and why it cannot establish a yes/no fault verdict. The page exposes planned calls, the execution trace, and tool results. The same route is available in the CLI with `--planner diagnostic`, where the machine must be named in the question.
+For the local website, install `requirements-web.txt`, then run `.venv/bin/streamlit run scripts/web_demo.py` from the repository root and open the local URL it prints. It uses the pool named by the `AROL_MANIFEST` environment variable, otherwise the presentation pool if present, otherwise the only pool under `data/event_pools/`. The sidebar chooses how questions are understood: Claude (default when `ANTHROPIC_API_KEY` is set) or the deterministic rules described here. The page clearly shows the selected machine. Ask `Is there any problem with head 4?` and it will request a bounded time window before reading events. With a window, it compares confirmed cap-present success against eligible peers and checks torque flags through registered tools. The short diagnostic answer and the detailed report state the observed evidence and why it cannot establish a yes/no fault verdict. The page exposes planned calls, the execution trace, and tool results. The same route is available in the CLI with `--planner diagnostic`, where the machine must be named in the question.
 
 After changing backend Python files while Streamlit is running, restart the local server. A page rerun can retain an older imported planner module even while showing updated page code.
 
@@ -139,7 +144,7 @@ flowchart TD
     CSV["Telemetry CSV files"] --> Parse["Parse and validate readings"]
     Parse --> Detect["Check counters across files; emit exact +1 events"]
     Detect --> Pool["Raw and event Parquet partitions + manifest"]
-    Question["Scoped question"] --> Plan["Rules or diagnostic planner; optional experimental torque LLM"]
+    Question["Question"] --> Plan["Rules or diagnostic planner; Claude planner (Anthropic API); optional local torque LLM"]
     Plan --> Guard["Validate tool and requested scope"]
     Pool --> Source["Select Parquet event rows or raw statuses"]
     Guard --> Source
@@ -150,7 +155,7 @@ flowchart TD
 | Stage | Main code | Responsibility |
 | --- | --- | --- |
 | CSV and event building | `src/ingestion/conversion.py`, `src/ingestion/event_pool.py`, `src/ingestion/event_table_polars.py`, `scripts/build_event_pool.py` | Parse raw columns, validate counters, carry prior rows across files, decode and save observed event partitions and manifest. |
-| Question planning | `src/agent/planner.py`, `src/agent/*_routing.py`, `src/agent/llm_validation.py` | Select supported tools and exact parameters; reject ambiguous or changed scope before dispatch. |
+| Question planning | `src/agent/planner.py`, `src/agent/*_routing.py`, `src/agent/claude_planner.py`, `src/agent/llm_validation.py` | Select supported tools and exact parameters (rules, or Claude for everyday wording); reject ambiguous, invalid or out-of-pool scope before dispatch. |
 | Scoped source | `src/common/event_pool_source.py`, `src/common/datasource.py`, `src/ingestion/adapter.py` | Validate the manifest, select relevant Parquet rows, preserve original event fields, and enforce the materialization limit. |
 | Analysis | `src/common/registry.py`, `src/common/runtime.py`, `src/analytics/registered_*.py` | Validate tool arguments, apply the requested scope, run deterministic analytics and return structured results with units and counts. |
 | Orchestration and output | `src/agent/orchestrator.py`, `src/agent/report.py`, `src/agent/trace.py`, `scripts/demo_agent.py` | Run the plan, record failures and timing, assemble a report, and save a trace. |
@@ -200,26 +205,36 @@ Then check that Ollama is running and the chosen tag appears in `ollama list`, a
 
 ## Claude planner (everyday wording)
 
-The rules only recognise the documented phrasings. `--planner claude` sends the question to the Anthropic API, where Claude chooses among **all twelve registered tools** and their arguments. "How hard did spindle 5 tighten caps this morning?" becomes `torque_stats` for `H05`, 06:00–12:00, without the exact vocabulary.
+The rules only recognise the documented phrasings. `--planner claude` sends the question to the Anthropic API, where Claude chooses among **all twelve registered tools** and their arguments. "How hard did spindle 5 tighten caps on February 1st?" becomes `torque_stats` for `H05`, `2026-02-01T00:00:00` to `2026-02-02T00:00:00`, without the exact vocabulary. Relative days ("yesterday", "this morning") get a clarification question when the pool spans more than one day, because recorded data has no "today".
+
+| Entry point | Default planner |
+| --- | --- |
+| CLI `scripts.demo_agent` | `rules` (pass `--planner claude`) |
+| Website `scripts/web_demo.py` | `claude` when `ANTHROPIC_API_KEY` is set, otherwise the deterministic `diagnostic` rules; switch in the sidebar or set `AROL_PLANNER` |
 
 What stays the same:
 
 - Tools compute every number. Claude's text is used only as a clarification question, never as a finding.
-- Every proposal is validated before data is loaded: the tool must be registered, the argument names must be known, heads must be canonical (`H05`), timestamps naive with start before end, and the tool combination must be supported. Invalid proposals are rejected, never repaired.
-- Each report has an **`Interpreted as:`** line, so you can check what Claude understood.
-- Only the question text, the tool descriptions and the pool's machine/time range are sent to Anthropic. Telemetry rows and results stay local.
-- If no key is configured or the API is unreachable, the deterministic rules answer instead. The trace shows `claude->rules (fallback)`.
+- Every proposal is validated before data is loaded: the tool must be registered, the argument names must be known, heads must be canonical (`H05`) and present in the pool, timestamps naive (`YYYY-MM-DDTHH:MM:SS`) with start before end and overlapping the data, `bins` between 1 and 200, and the tool combination must be supported. Invalid proposals are rejected, never repaired. Settings the tools do not accept (sigma, window lengths, thresholds) get a clarification instead of being silently ignored.
+- Each report has an **`Interpreted as:`** line, so you can check what Claude understood. The model that answered and its token usage are in the trace.
+- Sent to Anthropic: the system prompt, the tool descriptions, the question text (which may contain machine IDs), and the pool's machine ID, head list and time range. Telemetry rows and tool results stay local.
+- If no key is configured or the API is unreachable, overloaded or rejects the key, the deterministic `diagnostic` rules answer instead and the trace shows `claude->rules (fallback)`. Other API errors (for example a wrong model name) are reported as a clarification rather than hidden behind the rules. Each attempt times out after 30 s with one retry.
+- Questions longer than 1,000 characters are refused before any API call.
 
 Setup: put your key in the `ANTHROPIC_API_KEY` environment variable. Never put it in `config.yaml` or a committed file. On Windows: *Edit environment variables for your account* → *New*, then open a new terminal. Settings live in `config.yaml` under `agent.claude` (model `claude-opus-5-5`, `effort: low`, `fallback_to_rules: true`).
 
 ```bash
-python -m scripts.demo_agent --planner claude \
-  --question "which spindle had the worst success rate on the first morning?"
+.venv/bin/python -m scripts.demo_agent --planner claude --question "which spindle had the worst success rate on February 2nd?"
 ```
 
-The website has a *Question understanding* switch in the sidebar. Claude is the default when `ANTHROPIC_API_KEY` is set; `AROL_PLANNER=diagnostic` forces the rules.
+On Windows PowerShell use `.venv\Scripts\python.exe` and keep each command on one line (the `\` continuations in this README are for Unix shells).
 
-Evidence: `python -m scripts.verify_claude_paraphrases` asks 16 everyday-language questions to both planners (planning only, no data loaded). On a Feb 1–3 pool, Claude chose the expected tools and scope for 16/16 and the rules for 2/16 (the two questions that need a clarification). Total cost was about $0.08; see `benchmarks/integration/claude_paraphrases_*.json`. The system prompt and tool list are cached, so one question costs about half a cent.
+Evidence, measured on a pool built from the first three daily files of February (data from 2026-01-31T16:00 to 2026-02-03T15:59):
+
+- `scripts.verify_claude_paraphrases` asks 16 everyday-language questions to both planners (planning only, no data loaded). Claude chose the expected tools and scope for **16/16**. The rules managed **2/16**: the two questions whose correct answer is a clarification, and none of the 14 that should run. See `benchmarks/integration/claude_paraphrases_20261013-142158.json` (about $0.09).
+- `scripts.verify_claude_end_to_end` runs 24 questions through the whole pipeline (planning, data loading, tools, report): typos, Italian, supported pairs, KPI/idle/throughput questions, relative days, out-of-range dates and heads, a prompt-injection attempt, an unsupported setting and an oversized histogram. **24/24** passed, and every "should ask" case was answered by Claude asking rather than by the validator catching a bad plan. See `benchmarks/integration/claude_end_to_end_20261013-142103.json` (about $0.16).
+
+The system prompt and tool list are cached, so one question costs well under one cent after the first.
 
 ## Data definitions and limits
 
@@ -266,5 +281,8 @@ Start with [the demo guide](docs/DEMO.md) for presentation commands and [the 13-
 | Clarification needed / no tool calls | Give a supported telemetry analysis and explicit scope; the agent intentionally does not answer general questions or infer fault causes. |
 | `pytest` import mismatch in backups | Run `.venv/bin/python -m pytest tests -q` from the root rather than discovering tests inside `data/`. |
 | Local LLM unavailable | Verify Ollama is running and `ollama list` includes the configured model; use `--planner rules` for the verified default route. |
+| Report says `claude->rules (fallback)` | Claude could not be reached. The trace note gives the reason; most often `ANTHROPIC_API_KEY` is not set in *this* terminal (open a new one after setting it), there is no internet, or the key was rejected. |
+| "The Claude planner is misconfigured" | The API rejected the request (for example a wrong `agent.claude.model`). Fix the setting; the rules are deliberately not used to hide this. |
+| Website stops with a manifest error | Set `AROL_MANIFEST=data/event_pools/<pool>/manifest.json`, or keep exactly one pool under `data/event_pools/`. |
 
 For reproducible reviews, record the Git commit, selected manifest, question, generated report, trace, and exact test/evaluation command. Real-data verification records are under `benchmarks/integration/`; generated session data under `data/` stay local.

@@ -30,13 +30,17 @@ if Path.cwd().resolve() != ROOT:
     st.error(f"Start the app from the repository root: {ROOT}")
     st.stop()
 
-# The manifest is selected by the operator, not by an untrusted web input.
-requested_manifest = os.environ.get("AROL_MANIFEST", DEFAULT_MANIFEST)
+# The manifest is selected by the operator, not by an untrusted web input:
+# AROL_MANIFEST if set, else the presentation pool if present, else the one
+# local pool under data/event_pools (resolve_manifest refuses to guess among several).
+requested_manifest = os.environ.get("AROL_MANIFEST") or (
+    DEFAULT_MANIFEST if (ROOT / DEFAULT_MANIFEST).is_file() else None)
 try:
     manifest_path, manifest = resolve_manifest(requested_manifest, ROOT)
 except ValueError as exc:
     st.error(str(exc))
-    st.info("Set AROL_MANIFEST to a complete local pool manifest and restart.")
+    st.info("Set AROL_MANIFEST to a complete local pool manifest "
+            "(for example data/event_pools/<pool>/manifest.json) and restart.")
     st.stop()
 
 machine = manifest["summary"]["machine_id"]
