@@ -221,7 +221,7 @@ What stays the same:
 - If no key is configured or the API is unreachable, overloaded or rejects the key, the deterministic `diagnostic` rules answer instead and the trace shows `claude->rules (fallback)`. Other API errors (for example a wrong model name) are reported as a clarification rather than hidden behind the rules. Each attempt times out after 30 s with one retry.
 - Questions longer than 1,000 characters are refused before any API call.
 
-Setup: put your key in the `ANTHROPIC_API_KEY` environment variable. Never put it in `config.yaml` or a committed file. On Windows: *Edit environment variables for your account* → *New*, then open a new terminal. Settings live in `config.yaml` under `agent.claude` (model `claude-opus-5-5`, `effort: low`, `fallback_to_rules: true`).
+Setup: put your key in the `ANTHROPIC_API_KEY` environment variable. Never put it in `config.yaml` or a committed file. On Windows: *Edit environment variables for your account* > *New*, then open a new terminal. Settings live in `config.yaml` under `agent.claude` (model `claude-opus-5-5`, `effort: low`, `fallback_to_rules: true`).
 
 ```bash
 .venv/bin/python -m scripts.demo_agent --planner claude --question "which spindle had the worst success rate on February 2nd?"
@@ -249,7 +249,7 @@ The system prompt and tool list are cached, so one question costs well under one
 | Torque population | Torque statistics, histograms, trends, anomaly checks and head correlation describe **closures**: No Load cycles (head cycled without a cap, about 0 Nm) are excluded by default because they made a third of a real day's events "anomalies" and pulled the mean from about 2.0 to 1.34 Nm. Ask for `all_statuses` ("including No Load") to include them. Every report states the population used. |
 | Drift | Reported only when the latest-window slope of the torque moving average exceeds `analytics.drift_threshold_nm_per_hour` (0.05 Nm/h, a practical value still to be validated with AROL), not for any non-zero slope. |
 | Status/torque disagreements | The controller updates Status one reading after the count, so a few events (about 0.03%) carry the previous cycle's status, for example "Closure OK" at 0 Nm. They are counted in every torque report, not corrected. |
-| Timestamps | Used as recorded, with no conversion. The files appear to be UTC (each file named for a day starts at 16:00 the previous day), which suggests the plant runs on UTC+8, but this is unconfirmed. "Feb 1" and "per day" therefore mean the recorded clock's day, and reports and Claude's interpretation say so. |
+| Timestamps | UTC, as defined by the team contract (`docs/contract.md`) and used exactly as recorded. "Feb 1" and "per day" mean the UTC day; reports, plots and Claude's interpretation say UTC. |
 
 An empty time bucket means no **recorded** events there; it does not prove a machine was idle. A near-100% conditional cap-present success rate does not establish total production success, because No Load and missing/unreconstructed closures are different populations. Statistical torque flags and descriptive head rankings do not diagnose physical faults or prove engineering compliance. Values such as the configured torque bounds in `config.yaml` must be checked against confirmed process specifications before making engineering claims.
 

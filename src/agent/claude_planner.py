@@ -130,7 +130,7 @@ def describe_calls(calls) -> str:
             bits.append(f"machine {args['machine_id']}")
         if "start" in args or "end" in args:
             bits.append(f"{args.get('start', 'beginning')} -> {args.get('end', 'end of data')} "
-                        "(data clock, apparently UTC)")
+                        "(UTC)")
         if "status_filter" in args:
             value = args["status_filter"]
             bits.append(_FRIENDLY_STATUS.get(value, f"status {value}"))
@@ -175,7 +175,7 @@ def _context_text(context: dict) -> str:
         lines.append("Machines in this data pool: " + ", ".join(machines))
     if summary.get("ts_min") and summary.get("ts_max"):
         lines.append(f"Data available from {summary['ts_min']} to {summary['ts_max']} "
-                     "(timestamps as recorded, apparently UTC; use this clock for all times)")
+                     "(timestamps are UTC as recorded; use this clock for all times)")
     if summary.get("heads"):
         lines.append("Heads in this data pool: " + ", ".join(summary["heads"]))
     return "\n".join(lines) or "No pool details are available."

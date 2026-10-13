@@ -240,7 +240,7 @@ def test_describe_calls_is_readable():
     text = describe_calls([("torque_distribution", dict(head_id="H05", bins=5,
                                                         status_filter="successful", **WINDOW))])
     assert text == ("`torque_distribution` (head H05, 2026-02-01T00:00:00 -> 2026-02-01T12:00:00 "
-                    "(data clock, apparently UTC), successful closures only, 5 bins)")
+                    "(UTC), successful closures only, 5 bins)")
 
 
 def test_system_prompt_is_static_for_caching():

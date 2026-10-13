@@ -3,11 +3,12 @@ data:
     sample:
       - data/sample.csv
 
-  # Timestamps are used exactly as recorded. The AROL files appear to be UTC: each
-  # file named for a day starts at 16:00 the day before, which suggests the plant
-  # runs on UTC+8, but this is not confirmed, so nothing is converted. Shown in
-  # every report.
-  timezone: as recorded, apparently UTC (plant local time unconfirmed, likely UTC+8)
+  # The team contract (docs/contract.md) defines ts as UTC; timestamps are used
+  # exactly as recorded and shown as UTC in every report.
+  timezone: UTC
+
+  # null = auto-detect the head count from the CSV columns (team contract).
+  n_heads: null
 
   # Checked by the ingestion validation report.
   units:

@@ -6,6 +6,20 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from datetime import datetime
+
+# Audit finding: ISO strings were plotted as categories, so points were evenly
+# spaced and gaps disappeared. Times are parsed; the axis names the data clock.
+TIME_LABEL = "Recorded time (UTC)"
+
+
+def _times(values):
+    return [datetime.fromisoformat(str(value)) for value in values]
+
+
+def _population(meta, default="Observed events"):
+    label = (meta or {}).get("population")
+    return f"Events ({label})" if label else default
 
 
 def _finish(ax, title, ylabel, target):
@@ -19,7 +33,7 @@ def _finish(ax, title, ylabel, target):
     return target
 
 
-def _histogram(data, target):
+def _histogram(data, meta, target):
     edges, counts = data.get("bin_edges", []), data.get("counts", [])
     if not counts or len(edges) != len(counts) + 1:
         return None
@@ -40,7 +54,7 @@ def _histogram(data, target):
                    align="edge", edgecolor="white", color="#29627f")
             ax.set_title(title, loc="left", fontsize=10)
             ax.set_xlabel("Closure torque (Nm)")
-            ax.set_ylabel("Observed closures")
+            ax.set_ylabel(_population(meta))
             ax.grid(axis="y", alpha=0.2)
         axes[1].text(0, -0.28,
                      f"{zoom['outside_count']:,} readings outside zoom; included at left.",
@@ -54,10 +68,10 @@ def _histogram(data, target):
     ax.bar(edges[:-1], counts, width=[b - a for a, b in zip(edges, edges[1:])],
            align="edge", edgecolor="white", color="#29627f")
     ax.set_xlabel("Closure torque (Nm)")
-    return _finish(ax, "Observed torque distribution", "Observed closures", target)
+    return _finish(ax, "Observed torque distribution", _population(meta), target)
 
 
-def _trend(data, target):
+def _trend(data, meta, target):
     x, y = data.get("timestamps", []), data.get("moving_average", [])
     if not x or len(x) != len(y):
         return None
@@ -66,12 +80,12 @@ def _trend(data, target):
     # endpoints retained. The analytical result and report remain complete.
     step = max(1, (len(x) - 1) // 999)
     indices = sorted(set(range(0, len(x), step)) | {len(x) - 1})
-    ax.plot([x[i] for i in indices], [y[i] for i in indices], color="#29627f")
-    ax.set_xlabel("Stored plant timestamp")
+    ax.plot(_times([x[i] for i in indices]), [y[i] for i in indices], color="#29627f")
+    ax.set_xlabel(TIME_LABEL)
     return _finish(ax, "Trailing torque mean", "Torque (Nm)", target)
 
 
-def _heads(data, target):
+def _heads(data, meta, target):
     rows = data.get("ranked_heads", data.get("per_head", []))
     rows = [row for row in rows if row.get("success_rate_cap_present") is not None]
     if not rows:
@@ -87,26 +101,28 @@ def _heads(data, target):
     return _finish(ax, "Confirmed cap-present success by head", "Success (%)", target)
 
 
-def _time(data, target):
+def _time(data, meta, target):
     buckets = data.get("by_bucket", [])
     if not buckets:
         return None
     x = [item["bucket_start"] for item in buckets]
     y = [item["observed_events_per_hour"] for item in buckets]
     fig, ax = plt.subplots(figsize=(9, 4.5))
-    ax.plot(x, y, marker="o", color="#29627f")
-    ax.set_xlabel("Requested interval (stored plant time)")
+    ax.plot(_times(x), y, marker="o", color="#29627f")
+    ax.set_xlabel("Requested interval start (UTC)")
     return _finish(ax, "Observed event throughput", "Observed events / hour", target)
 
 
-def _idle(data, target):
+def _idle(data, meta, target):
     periods = data.get("idle_periods", [])
     if not periods:
         return None
     fig, ax = plt.subplots(figsize=(9, 4.5))
-    ax.bar([p["start"] for p in periods], [p["duration_seconds"] for p in periods],
+    # Bars span each interval on a real time axis (widths are in days).
+    ax.bar(_times([p["start"] for p in periods]), [p["duration_seconds"] for p in periods],
+           width=[p["duration_seconds"] / 86400 for p in periods], align="edge",
            color="#ad7631")
-    ax.set_xlabel("Candidate start (stored plant time)")
+    ax.set_xlabel("Interval start (UTC)")
     ax.tick_params(axis="x", labelrotation=35)
     return _finish(ax, "All-head No Load intervals", "Observed seconds", target)
 
@@ -124,7 +140,7 @@ def render(results, out_dir):
     for name, reply in results:
         if reply.get("ok") and name in PLOTTERS:
             output.mkdir(parents=True, exist_ok=True)
-            path = PLOTTERS[name](reply["result"], output / f"{name}.png")
+            path = PLOTTERS[name](reply["result"], reply.get("meta"), output / f"{name}.png")
             if path is not None:
                 made.append((name, path))
     return made
