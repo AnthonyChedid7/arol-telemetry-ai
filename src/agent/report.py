@@ -276,8 +276,8 @@ def _finding_head_correlation(result, meta):
         f"- Matched finite torque pairs: {result['matched_torque_samples']:,}; "
         f"Pearson correlation: {_analytics_number(result['torque_correlation'])} "
         f"({result['torque_correlation_interpretation']}).",
-        "- Person A denominator: non-null error_class other than No Load. "
-        "This is distinct from the cap-present KPI denominator.",
+        "- Success denominator: cap-present closures, the same definition as the "
+        "KPI tools (team contract).",
     ]
     if meta.get("population"):
         lines.insert(0, f"- Events analysed: {meta['population']} (pairs where both heads "

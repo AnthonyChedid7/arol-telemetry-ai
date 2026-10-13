@@ -20,6 +20,7 @@ SCOPE = ["start", "end", "head_id", "machine_id", "status_filter"]
 # when a configuration omits the key.
 DEFAULT_DRIFT_NM_PER_HOUR = 0.05
 DEFAULT_TREND_MAX_POINTS = 2000  # config.yaml analytics.trend_max_points
+CAP_PRESENT_LABEL = "cap-present closures (status 0 or 65; No Load excluded)"
 OBSERVED_NOTE = (
     "Only supplied observed exact +1 events are analysed. "
     "Counter discontinuities are not reconstructed. "
@@ -178,25 +179,31 @@ def registered_head_correlation(events, *, head_a, head_b,
     # Audit finding: two heads idling together (No Load, torque ~0) produced
     # r=0.99 on real data although closures alone give r=0.44. Correlation and
     # the per-head summaries therefore use closures only.
-    if "error_class" in selected.columns:
+    #
+    # The population is the cap-present closures, so Person A's success
+    # denominator inside head_correlation equals the team contract's (and the
+    # KPI tools'): status 0 / cap_present. Unknown cap presence is not counted.
+    if "cap_present" in selected.columns:
+        selected = selected.filter(pl.col("cap_present").fill_null(False))
+    elif "error_class" in selected.columns:
         selected = selected.filter(pl.col("error_class").fill_null("") != NO_LOAD_CLASS)
     result = head_correlation(selected, head_a, head_b)
     matched = _matched_torque_pairs(selected, head_a, head_b)
     response = envelope(
         result, n=result["matched_torque_samples"],
         filters_applied=applied + [f"head pair: {head_a}, {head_b}",
-                                   "population: closures, excluding No Load cycles"],
+                                   f"population: {CAP_PRESENT_LABEL}"],
         units={"mean_torque": "Nm", "torque_correlation": "dimensionless",
                "success_rate_difference": "fraction",
                "success_rate_difference_percentage_points": "percentage points"},
         window=data_window(selected),
         notes=(OBSERVED_NOTE + "n counts matched finite torque pairs. The main data window "
-               "covers both heads' summary observations. Person A's success denominator "
-               "uses events with non-null error_class other than 'No Load'; it is not "
-               "the cap_present=True denominator used by Person B's KPI tools. "
+               "covers both heads' summary observations. Success rates use the team "
+               "contract's denominator, the same as the KPI tools: successful (status 0) "
+               "cap-present closures / cap-present closures. "
                "Correlation does not establish causation. Ambiguous pairings are rejected, "
                "not deduplicated or paired across machines."),
     )
     response["meta"]["correlation_data_window"] = data_window(matched)
-    response["meta"]["population"] = "closures, excluding No Load cycles"
+    response["meta"]["population"] = CAP_PRESENT_LABEL
     return response

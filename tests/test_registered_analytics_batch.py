@@ -193,7 +193,7 @@ def test_missing_head_returns_insufficient_overlap(events, cfg):
     assert response["meta"]["n"] == 0
 
 
-def test_success_denominator_is_preserved_and_disclosed(events, cfg):
+def test_success_denominator_is_the_contract_cap_present_one(events, cfg):
     changed = events.with_columns(
         pl.when(pl.col("status") == 2).then(pl.lit("No Closure"))
         .otherwise(pl.col("error_class")).alias("error_class"),
@@ -204,9 +204,11 @@ def test_success_denominator_is_preserved_and_disclosed(events, cfg):
     response = dispatch_tool("head_correlation", changed, config=cfg,
                              arguments={"head_a": "H01", "head_b": "H02"})
     assert response["ok"] is True
-    assert response["result"]["head_a"]["success_evaluable_count"] == 3
-    assert response["result"]["head_a"]["success_rate"] == pytest.approx(2 / 3)
-    assert "not the cap_present=True denominator" in response["meta"]["notes"]
+    # The unknown-cap "No Closure" event is outside the contract's cap-present
+    # denominator (status 0 or 65), exactly as in the KPI tools.
+    assert response["result"]["head_a"]["success_evaluable_count"] == 2
+    assert response["result"]["head_a"]["success_rate"] == pytest.approx(1.0)
+    assert "same as the KPI tools" in response["meta"]["notes"]
 
 
 def test_model_schemas_exclude_runtime_settings():
@@ -230,7 +232,7 @@ def test_reports_describe_results_without_claiming_machine_health(events, cfg, n
     assert "Nothing anomalous surfaced" not in text
     assert "machine is stable" not in text
     if name == "head_correlation":
-        assert "Person A denominator" in text
+        assert "Success denominator: cap-present closures" in text
         assert "Rates are computed over cap-present" not in text
     elif name == "torque_trend":
         assert "Nm per hour" in text

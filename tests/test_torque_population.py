@@ -85,7 +85,7 @@ def test_correlation_ignores_heads_idling_together():
     # With the idle cycles the two heads would look almost perfectly correlated.
     assert result["result"]["matched_torque_samples"] == 20
     assert abs(result["result"]["torque_correlation"]) < 0.9
-    assert result["meta"]["population"] == "closures, excluding No Load cycles"
+    assert result["meta"]["population"] == "cap-present closures (status 0 or 65; No Load excluded)"
 
 
 def test_status_torque_disagreements_are_counted_not_changed():
