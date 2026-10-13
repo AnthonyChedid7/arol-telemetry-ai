@@ -1,6 +1,9 @@
 """Strict validation of model tool proposals; never delete or repair arguments."""
 import json
+import re
 from datetime import datetime
+
+from ..common.registry import MAX_BINS
 
 VERIFIED_TOOLS = frozenset({
     "torque_stats", "torque_distribution", "torque_trend",
@@ -81,8 +84,8 @@ def strict_calls(message, lookup):
     bounds = {}
     for key, value in args.items():
         if key == "bins":
-            if type(value) is not int or value <= 0:
-                raise ValueError("bins must be a positive integer")
+            if type(value) is not int or not 0 < value <= MAX_BINS:
+                raise ValueError(f"bins must be an integer from 1 to {MAX_BINS}")
         elif key == "status_filter":
             if not (type(value) is int or value == "successful"):
                 raise ValueError("status_filter must be an integer or 'successful'; omit unused filters")
@@ -101,6 +104,10 @@ def strict_calls(message, lookup):
     if name == "head_correlation" and args["head_a"] == args["head_b"]:
         raise ValueError("Head comparison requires distinct heads")
     return [(name, dict(args))]
+
+
+_ISO_SECONDS = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
+MAX_STATUS_CODE = 0xFFFF  # AROL status words are 16-bit fields
 
 
 def _canonical_head(key, value):
@@ -132,11 +139,11 @@ def validate_tool_call(name, args, lookup):
     bounds = {}
     for key, value in args.items():
         if key == "bins":
-            if type(value) is not int or value <= 0:
-                raise ValueError("bins must be a positive integer")
+            if type(value) is not int or not 0 < value <= MAX_BINS:
+                raise ValueError(f"bins must be an integer from 1 to {MAX_BINS}")
         elif key == "status_filter":
-            if not ((type(value) is int) or value == "successful"):
-                raise ValueError("status_filter must be an integer status code or 'successful'")
+            if not ((type(value) is int and 0 <= value <= MAX_STATUS_CODE) or value == "successful"):
+                raise ValueError("status_filter must be a status code from 0 to 65535 or 'successful'")
         elif key == "bucket":
             if value not in ("hour", "day"):
                 raise ValueError("bucket must be 'hour' or 'day'")
@@ -148,12 +155,14 @@ def validate_tool_call(name, args, lookup):
                 raise ValueError("head_id list must not be empty")
             for head in heads:
                 _canonical_head(key, head)
+            if len(set(heads)) != len(heads):
+                raise ValueError("head_id list must not repeat a head")
         elif key == "machine_id":
             if not isinstance(value, str) or not value.strip():
                 raise ValueError("machine_id must be a non-empty string")
         elif key in {"start", "end"}:
-            if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"{key} must be an ISO timestamp string")
+            if not isinstance(value, str) or not _ISO_SECONDS.fullmatch(value):
+                raise ValueError(f"{key} must be a timestamp like 2026-02-01T06:00:00, got {value!r}")
             bound = datetime.fromisoformat(value)
             if bound.tzinfo is not None:
                 raise ValueError("Timezone-aware bounds are not supported")

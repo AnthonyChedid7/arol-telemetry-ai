@@ -21,6 +21,8 @@ answers instead and the trace says so.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from ..common import registry
 from .planner import Plan, Planner
 
@@ -80,7 +82,13 @@ the data ("the first hour of data", "the last day", "all the data") are fine.
 - When the context names the machine in this data pool and the user does not \
 name one, use that machine_id exactly (machine ids are case-sensitive).
 - Thresholds, windows, sigma values and limits are configured by the \
-application and are never arguments.
+application and are never arguments. If the user explicitly asks for a setting \
+the tools do not accept (a sigma, threshold, window length, limit, shift \
+definition, or anything else missing from the schemas), do not run the analysis \
+without it: reply that this setting is fixed by the application configuration \
+and ask whether to run with the configured value.
+- Head identifiers must be heads listed in the context, and time windows must \
+overlap the data range given in the context. Otherwise ask.
 
 Combining tools: call one tool, or at most two tools from these pairs, with \
 exactly the same scope arguments: torque_stats + torque_distribution; \
@@ -97,16 +105,23 @@ saying what is missing. Never guess a time window the user did not imply.\
 _FRIENDLY_STATUS = {"successful": "successful closures only"}
 
 
+def _text(value) -> str:
+    return ", ".join(map(str, value)) if isinstance(value, (list, tuple)) else str(value)
+
+
 def describe_calls(calls) -> str:
-    """Deterministic, human-readable summary of what will run."""
+    """Deterministic, human-readable summary of what will run.
+
+    Also used for rejected proposals, so it must accept any argument shapes.
+    """
     parts = []
     for name, args in calls:
+        args = args if isinstance(args, dict) else {}
         bits = []
-        if "head_a" in args:
-            bits.append(f"heads {args['head_a']} vs {args['head_b']}")
+        if "head_a" in args or "head_b" in args:
+            bits.append(f"heads {_text(args.get('head_a', '?'))} vs {_text(args.get('head_b', '?'))}")
         if "head_id" in args:
-            heads = args["head_id"]
-            bits.append("head " + (", ".join(heads) if isinstance(heads, list) else heads))
+            bits.append("head " + _text(args["head_id"]))
         if "machine_id" in args:
             bits.append(f"machine {args['machine_id']}")
         if "start" in args or "end" in args:
@@ -120,6 +135,26 @@ def describe_calls(calls) -> str:
             bits.append(f"{args['bins']} bins")
         parts.append(f"`{name}`" + (" (" + ", ".join(bits) + ")" if bits else " (all data)"))
     return "; ".join(parts)
+
+
+def _claude_unreachable(exc) -> bool:
+    """True when Claude cannot answer right now, so the rules should.
+
+    Anything else (bad request, unknown model, rejected beta, a bug) is a
+    misconfiguration that must stay visible instead of silently routing every
+    question through the rules.
+    """
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
+    import anthropic
+    if isinstance(exc, (anthropic.APIConnectionError, anthropic.RateLimitError,
+                        anthropic.AuthenticationError, anthropic.PermissionDeniedError,
+                        anthropic.CredentialsError)):
+        return True
+    if isinstance(exc, anthropic.APIStatusError) and exc.status_code >= 500:
+        return True
+    # Without any credentials the SDK raises TypeError before sending.
+    return isinstance(exc, TypeError) and "authentication" in str(exc).lower()
 
 
 def _context_text(context: dict) -> str:
@@ -151,7 +186,9 @@ class ClaudePlanner(Planner):
         self.model = settings.get("model", DEFAULT_MODEL)
         self.effort = settings.get("effort", "low")
         self.max_tokens = int(settings.get("max_tokens", 16000))
-        self.timeout = float(settings.get("timeout_seconds", 60))
+        self.timeout = float(settings.get("timeout_seconds", 30))
+        self.max_retries = int(settings.get("max_retries", 1))
+        self.max_question_chars = int(settings.get("max_question_chars", 1000))
         self.fallback = bool(settings.get("fallback_to_rules", True))
         self._client = client
         self.last_error: str | None = None
@@ -164,7 +201,9 @@ class ClaudePlanner(Planner):
     def _client_or_create(self):
         if self._client is None:
             import anthropic
-            self._client = anthropic.Anthropic(timeout=self.timeout)
+            # Bounded so an outage reaches the rules fallback in about a minute.
+            self._client = anthropic.Anthropic(timeout=self.timeout,
+                                               max_retries=self.max_retries)
         return self._client
 
     def _call(self, question: str, context: dict, tools: list[dict]):
@@ -200,10 +239,17 @@ class ClaudePlanner(Planner):
         self.dropped_args = []
         self.last_usage = None
 
+        if len(query or "") > self.max_question_chars:
+            return self._reject(f"the question is longer than {self.max_question_chars} characters")
+
         tools = registry.get_tool_specs()
         try:
             response = self._call(query, context, tools)
-        except Exception as exc:  # network, auth, rate limit, missing key
+        except Exception as exc:
+            if not _claude_unreachable(exc):
+                # Misconfiguration or a bug: say so instead of hiding it behind the rules.
+                return self._reject(f"the Claude planner is misconfigured "
+                                    f"({type(exc).__name__}: {exc})")
             self.last_error = f"{type(exc).__name__}: {exc}"
             if not self.fallback:
                 raise
@@ -213,19 +259,22 @@ class ClaudePlanner(Planner):
                               f"deterministic rules: {plan.rationale}")
             return plan
 
+        # With server-side fallback a different model may have answered.
+        served_by = getattr(response, "model", None) or self.model
         usage = getattr(response, "usage", None)
+        self.last_usage = {"model": served_by}
         if usage is not None:
-            self.last_usage = {
+            self.last_usage.update({
                 key: getattr(usage, key, None) for key in (
                     "input_tokens", "output_tokens",
                     "cache_read_input_tokens", "cache_creation_input_tokens")
-            }
+            })
 
         stop = getattr(response, "stop_reason", None)
         if stop == "refusal":
-            return self._reject("Claude declined to plan this question.")
+            return self._reject("Claude declined to plan this question")
         if stop == "max_tokens":
-            return self._reject("Claude's reply was cut off before the plan was complete.")
+            return self._reject("Claude's reply was cut off before the plan was complete")
 
         blocks = list(getattr(response, "content", None) or [])
         proposals = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
@@ -236,7 +285,7 @@ class ClaudePlanner(Planner):
                 goal="Clarify the requested analysis and scope.",
                 ambiguous=True,
                 clarification=text or "Please rephrase the question with the analysis, head, and time window.",
-                rationale=f"{self.model} asked for clarification; no tools called",
+                rationale=f"{served_by} asked for clarification; no tools called",
             )
 
         try:
@@ -256,7 +305,8 @@ class ClaudePlanner(Planner):
             goal=f"Run {' and '.join(names)} within the scope interpreted from the question.",
             calls=calls,
             filters=filters,
-            rationale=f"{self.model} proposed {len(calls)} tool call(s); names, types and combination validated",
+            rationale=(f"{served_by} proposed {len(calls)} tool call(s); names, types, "
+                       "combination and pool scope validated"),
             interpretation=describe_calls(calls),
         )
 
@@ -267,11 +317,27 @@ class ClaudePlanner(Planner):
         summary = context.get("pool_summary") or {}
         known = summary.get("machines") or ([context["selected_machine"]]
                                             if context.get("selected_machine") else [])
+        heads = set(summary.get("heads") or [])
+        lo = datetime.fromisoformat(summary["ts_min"]) if summary.get("ts_min") else None
+        hi = datetime.fromisoformat(summary["ts_max"]) if summary.get("ts_max") else None
         for _, args in calls:
             machine = args.get("machine_id")
             if machine is not None and known and machine not in known:
                 raise ValueError(f"machine {machine!r} is not in this data pool "
                                  f"(available: {', '.join(known)})")
+            requested = [args.get("head_a"), args.get("head_b")]
+            requested += args["head_id"] if isinstance(args.get("head_id"), list) else [args.get("head_id")]
+            missing = sorted(h for h in requested if h is not None and heads and h not in heads)
+            if missing:
+                raise ValueError(f"head {', '.join(missing)} is not in this data pool "
+                                 f"(heads {min(heads)} to {max(heads)})")
+            # A window entirely outside the recorded data can only return nothing.
+            start = datetime.fromisoformat(args["start"]) if "start" in args else None
+            end = datetime.fromisoformat(args["end"]) if "end" in args else None
+            if ((lo is not None and end is not None and end <= lo)
+                    or (hi is not None and start is not None and start > hi)):
+                raise ValueError(f"the requested time window is outside the recorded data "
+                                 f"({summary['ts_min']} to {summary['ts_max']})")
 
     def _reject(self, reason, proposed=""):
         self.validation_error = reason

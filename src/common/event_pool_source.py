@@ -218,8 +218,17 @@ class EventPoolSource:
         starts = [p["ts_min"] for p in partitions if p.get("ts_min")]
         ends = [p["ts_max"] for p in partitions if p.get("ts_max")]
         machine = (manifest.get("summary") or {}).get("machine_id")
+        heads = []
+        if partitions and partitions[0].get("raw_parquet"):
+            # The builder rejects head-set changes between files, so the first
+            # raw partition's "<head> Count" columns name every head (schema only).
+            raw = (self.paths[pool].parent / partitions[0]["raw_parquet"]).resolve()
+            if raw.is_relative_to(self.paths[pool].parent) and raw.is_file():
+                heads = sorted(name[:-len(" Count")] for name in pl.read_parquet_schema(raw)
+                               if name.endswith(" Count"))
         return {
             "machines": [machine] if machine else [],
+            "heads": heads,
             "ts_min": min(starts) if starts else None,
             "ts_max": max(ends) if ends else None,
         }

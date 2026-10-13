@@ -7,6 +7,8 @@ Unknown clauses cause clarification rather than broadening a request.
 import re
 from datetime import datetime, timedelta
 
+from ..common.registry import MAX_BINS
+
 
 def _parse_canonical_torque_request(query):
     """Return None for other domains, or a plan dictionary for torque queries."""
@@ -99,7 +101,7 @@ def _parse_canonical_torque_request(query):
                 added = {"status_filter": None}
             elif kind == "bins":
                 number = int(match.group(1))
-                if tool != "torque_distribution" or number < 1:
+                if tool != "torque_distribution" or not 1 <= number <= MAX_BINS:
                     return clarify()
                 added = {"bins": number}
             else:

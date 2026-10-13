@@ -36,5 +36,7 @@ agent:
     model: claude-opus-5-5
     effort: low
     max_tokens: 16000
-    timeout_seconds: 60
-    fallback_to_rules: true
+    timeout_seconds: 30      # per attempt; with max_retries 1 an outage falls back in ~1 min
+    max_retries: 1
+    max_question_chars: 1000 # longer questions are refused before any API call
+    fallback_to_rules: true  # only when Claude is unreachable; misconfiguration is reported

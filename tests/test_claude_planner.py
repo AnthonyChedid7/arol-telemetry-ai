@@ -76,8 +76,13 @@ def test_null_status_filter_means_all_statuses(planner, monkeypatch):
     ("torque_stats", {"sigma": 2}, "does not accept"),
     ("torque_stats", {"status_filter": "ok"}, "status_filter"),
     ("torque_stats", {"start": "2026-02-01T12:00:00", "end": "2026-02-01T00:00:00"}, "earlier"),
-    ("torque_stats", {"start": "2026-02-01T00:00:00+02:00"}, "Timezone"),
+    ("torque_stats", {"start": "2026-02-01T00:00:00+02:00"}, "timestamp like"),
+    ("torque_stats", {"start": "20260201T060000"}, "timestamp like"),
+    ("torque_stats", {"start": "2026-02-01"}, "timestamp like"),
+    ("torque_stats", {"status_filter": 2 ** 70}, "status_filter"),
+    ("torque_stats", {"head_id": ["H05", "H05"]}, "repeat"),
     ("torque_distribution", {"bins": "10"}, "bins"),
+    ("torque_distribution", {"bins": 1_000_000}, "from 1 to 200"),
     ("kpi_over_time", dict(machine_id="M1", bucket="week", **WINDOW), "bucket"),
     ("machine_idle", {"machine_id": "M1"}, "requires"),
     ("head_correlation", {"head_a": "H05", "head_b": "H05"}, "distinct"),
@@ -109,6 +114,76 @@ def test_machine_outside_the_pool_is_rejected(planner, monkeypatch):
     plan = planner.plan("success rate", {"pool_summary": {"machines": ["M1"]}})
     assert plan.ambiguous
     assert "not in this data pool" in planner.validation_error
+
+
+POOL = {"pool_summary": {"machines": ["M1"], "heads": [f"H{n:02d}" for n in range(1, 37)],
+                         "ts_min": "2026-01-31T16:00:00", "ts_max": "2026-02-03T15:59:59"}}
+
+
+@pytest.mark.parametrize("name,args,reason", [
+    ("torque_stats", {"head_id": "H40"}, "H40 is not in this data pool"),
+    ("head_correlation", {"head_a": "H01", "head_b": "H99"}, "H99 is not in this data pool"),
+    ("torque_stats", {"start": "2026-03-10T00:00:00", "end": "2026-03-11T00:00:00"}, "outside the recorded data"),
+    ("torque_stats", {"start": "2026-01-01T00:00:00", "end": "2026-01-31T16:00:00"}, "outside the recorded data"),
+])
+def test_heads_and_windows_outside_the_pool_are_rejected(planner, monkeypatch, name, args, reason):
+    answer_with(planner, monkeypatch, response(tool_use(name, args)))
+    plan = planner.plan("q", POOL)
+    assert plan.ambiguous and plan.calls == []
+    assert reason in planner.validation_error
+
+
+def test_window_overlapping_the_pool_is_accepted(planner, monkeypatch):
+    args = {"head_id": "H36", "start": "2026-02-03T15:00:00", "end": "2026-02-04T00:00:00"}
+    answer_with(planner, monkeypatch, response(tool_use("torque_stats", args)))
+    assert planner.plan("q", POOL).calls == [("torque_stats", args)]
+
+
+@pytest.mark.parametrize("args", [
+    {"head_a": "H05"}, {"head_id": 5}, {"head_id": [5]}, {"head_id": {"x": 1}}, "not a dict",
+])
+def test_malformed_arguments_never_raise(planner, monkeypatch, args):
+    answer_with(planner, monkeypatch, response(tool_use("head_correlation", args)))
+    plan = planner.plan("q", {})
+    assert plan.ambiguous and plan.calls == []
+
+
+def test_overlong_question_is_rejected_before_any_api_call(planner, monkeypatch):
+    monkeypatch.setattr(planner, "_call", lambda *a: pytest.fail("must not call the API"))
+    assert planner.plan("x" * 1001, {}).ambiguous
+
+
+def test_misconfiguration_is_reported_not_hidden_behind_rules(planner, monkeypatch):
+    def broken(*args):
+        raise ValueError("unknown model claude-typo")
+    monkeypatch.setattr(planner, "_call", broken)
+    plan = planner.plan("Average torque for head 5 on 2026-02-01", {})
+    assert plan.ambiguous and plan.calls == []
+    assert "misconfigured" in plan.clarification and "claude-typo" in plan.clarification
+    assert planner.last_error is None  # not labelled as a transport fallback
+
+
+def test_missing_credentials_fall_back_to_rules(planner, monkeypatch):
+    def no_key(*args):
+        raise TypeError('"Could not resolve authentication method. Expected one of api_key"')
+    monkeypatch.setattr(planner, "_call", no_key)
+    plan = planner.plan("Average torque for head 5 on 2026-02-01", {})
+    assert plan.calls and "TypeError" in planner.last_error
+
+
+def test_serving_model_is_recorded(planner, monkeypatch):
+    reply = response(tool_use("torque_stats", {}))
+    reply.model = "claude-opus-4-8"
+    answer_with(planner, monkeypatch, reply)
+    plan = planner.plan("torque", {})
+    assert plan.rationale.startswith("claude-opus-4-8 proposed")
+    assert planner.last_usage["model"] == "claude-opus-4-8"
+
+
+def test_rules_reject_unbounded_bins():
+    from src.agent.planner import RulePlanner
+    assert RulePlanner().plan("Show torque distribution with 100000 bins", {}).ambiguous
+    assert not RulePlanner().plan("Show torque distribution with 200 bins", {}).ambiguous
 
 
 def test_no_tool_call_becomes_clarification_not_finding(planner, monkeypatch):

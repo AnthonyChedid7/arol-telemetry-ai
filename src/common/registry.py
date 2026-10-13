@@ -23,9 +23,13 @@ from . import envelope as env
 
 # --- the frozen parameter vocabulary (F4) ---------------------------------
 
+# The histogram does one pass over the events per bin, so the count is bounded:
+# an unbounded value let a single question hold the demo for minutes.
+MAX_BINS = 200
+
 PARAM_VOCABULARY: dict[str, dict] = {
-    "bins": {"type": "integer", "minimum": 1, "default": 10,
-             "description": "Number of equal-width histogram bins."},
+    "bins": {"type": "integer", "minimum": 1, "maximum": MAX_BINS, "default": 10,
+             "description": f"Number of equal-width histogram bins (1 to {MAX_BINS})."},
     "head_a": {"type": "string", "minLength": 1,
                "description": "First head identifier, for example H01."},
     "head_b": {"type": "string", "minLength": 1,
@@ -231,8 +235,8 @@ def coerce_params(params: dict) -> tuple[dict, list[str], list[str]]:
     errors: list[str] = []
     for key, value in params.items():
         if key == "bins":
-            if type(value) is not int or value <= 0:
-                errors.append(f"bins={value!r} must be a positive integer")
+            if type(value) is not int or not 0 < value <= MAX_BINS:
+                errors.append(f"bins={value!r} must be an integer from 1 to {MAX_BINS}")
                 continue
             out[key] = value
             continue

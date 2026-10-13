@@ -1,11 +1,49 @@
 {
-  "created_utc": "2026-10-13T13:46:00.331575+00:00",
+  "created_utc": "2026-10-13T14:21:58.700008+00:00",
   "model": "claude-opus-5-5",
   "effort": "low",
   "manifest": "data/event_pools/feb01-03/manifest.json",
   "pool_summary": {
     "machines": [
       "MCC777eda3db57348ef8a3113a642ae74db"
+    ],
+    "heads": [
+      "H01",
+      "H02",
+      "H03",
+      "H04",
+      "H05",
+      "H06",
+      "H07",
+      "H08",
+      "H09",
+      "H10",
+      "H11",
+      "H12",
+      "H13",
+      "H14",
+      "H15",
+      "H16",
+      "H17",
+      "H18",
+      "H19",
+      "H20",
+      "H21",
+      "H22",
+      "H23",
+      "H24",
+      "H25",
+      "H26",
+      "H27",
+      "H28",
+      "H29",
+      "H30",
+      "H31",
+      "H32",
+      "H33",
+      "H34",
+      "H35",
+      "H36"
     ],
     "ts_min": "2026-01-31T16:00:00",
     "ts_max": "2026-02-03T15:59:59"
@@ -14,12 +52,12 @@
   "rules_correct": 2,
   "n_questions": 16,
   "token_usage": {
-    "input_tokens": 2788,
-    "output_tokens": 2733,
-    "cache_read_input_tokens": 87792,
+    "input_tokens": 4660,
+    "output_tokens": 2708,
+    "cache_read_input_tokens": 90160,
     "cache_creation_input_tokens": 0
   },
-  "estimated_cost_usd": 0.0834,
+  "estimated_cost_usd": 0.0908,
   "limits": [
     "Planning only: tool choice and arguments are compared; no event data is loaded.",
     "Expected calls were written by hand for this pool; machine_id is ignored where it is optional and equals the pool's only machine.",
@@ -403,18 +441,18 @@
           "compare_head_success",
           {
             "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "head_id": "H04",
             "start": "2026-02-01T09:00:00",
-            "end": "2026-02-01T10:00:00",
-            "head_id": "H04"
+            "end": "2026-02-01T10:00:00"
           }
         ],
         [
           "detect_torque_anomalies",
           {
             "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "head_id": "H04",
             "start": "2026-02-01T09:00:00",
-            "end": "2026-02-01T10:00:00",
-            "head_id": "H04"
+            "end": "2026-02-01T10:00:00"
           }
         ]
       ],
@@ -460,7 +498,7 @@
       "expected": null,
       "claude_calls": [],
       "claude_interpretation": "",
-      "claude_clarification": "Which time window should I check head 4 (H04) over? For example, all the data (2026-01-31 16:00 to 2026-02-03 16:00), or a specific day or shift.",
+      "claude_clarification": "To check head 4 I need a time window. Which period should I look at? For example, a specific date between 2026-01-31 and 2026-02-03, or all the data (2026-01-31 16:00 to 2026-02-03 16:00)?",
       "claude_correct": true,
       "rules_calls": [],
       "rules_correct": true
@@ -470,7 +508,7 @@
       "expected": null,
       "claude_calls": [],
       "claude_interpretation": "",
-      "claude_clarification": "I can't look up the weather. These tools only cover telemetry from capping machines. For machine MCC777eda3db57348ef8a3113a642ae74db, I can look at:\n\n* **Torque:** stats, trends or unusual values\n* **Success rates:** overall, per head, or how one head compares with the others\n* **Throughput:** caps per hour or per day\n* **Idle time:** periods when the machine wasn't running\n\nThe data runs from 2026-01-31T16:00:00 to 2026-02-03T15:59:59. Would you like to look at any of these?",
+      "claude_clarification": "I can't check the weather. I can only analyse the capping machine's telemetry: torque, success rates, throughput, idle time and how individual heads are doing. Do you have a question about machine MCC777eda3db57348ef8a3113a642ae74db? Its data runs from 2026-01-31 16:00 to 2026-02-03 16:00.",
       "claude_correct": true,
       "rules_calls": [],
       "rules_correct": true
