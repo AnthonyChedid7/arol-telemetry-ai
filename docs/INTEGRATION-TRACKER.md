@@ -2,6 +2,8 @@
 
 ## Integration checkpoint — verified separate baselines
 
+> **Historical record (note added 2026-10-13).** Checkpoints are appended in chronological order; earlier entries describe the project at that time. For the current state see `README.MD` and `AUDIT-REPORT.md`.
+
 Branch: `integration/person-a-person-b`
 
 ### Verified results

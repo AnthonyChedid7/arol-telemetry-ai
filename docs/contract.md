@@ -1,5 +1,7 @@
 # Project Contract — Shared Interfaces
 
+> **Status note (added 2026-10-13).** The Polars/Parquet architecture this amendment introduces is implemented and integrated. The "required action" below records the request made at the time; whether it was formally re-confirmed is not recorded here. The definitions in this contract are what the code follows. One audit observation concerns it: about 0.03% of events show the controller updating Status one reading after the count, so the "status on the increment row" rule is followed and those events are flagged in reports, not changed (see `AUDIT-REPORT.md`).
+
 **Project:** Agentic AI for Telemetry Analysis on AROL Capping Machines  
 **Status:** AMENDED PERFORMANCE CONTRACT (v2) — Steps 4–9 were first completed with a pandas reference implementation and 70 regression tests; this version updates the shared architecture before Step 10.  
 **Required action:** Person B must re-confirm the shared event-table/tool-input contract because the canonical in-memory table changes from pandas to Polars.

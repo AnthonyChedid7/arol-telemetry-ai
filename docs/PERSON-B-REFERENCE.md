@@ -2,6 +2,8 @@
 
 This guide documents the **Person B standalone source snapshot** supplied in the project, then distinguishes behaviors changed by the merged integration. Paths and line numbers refer to that snapshot; do not assume a standalone implementation is identical to current `main`.
 
+> **Note (2026-10-13):** this is a historical record of Person B's standalone snapshot. Several files it cites (for example `src/analytics/kpi.py`, `src/testing/*.py`, `src/interface/cli.py`, `src/ingestion/api.py`) exist only in that snapshot, so their line numbers are deliberately left unchanged. For the integrated code see `INTEGRATION-REFERENCE.md`, whose line references are current.
+
 ## What Person B built
 
 1. A canonical twelve-column event contract and bitfield-aware status decoding. `cap_present` can be true, false, **or unknown**, so an unknown cannot silently become a success-rate denominator.

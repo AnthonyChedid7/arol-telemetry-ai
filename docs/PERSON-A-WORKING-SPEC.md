@@ -1,5 +1,7 @@
 # Person A — Working Spec
 
+> **Historical record (note added 2026-10-13).** The "being refactored" status below describes the time of writing; the Parquet + Polars data path is implemented and is the production path. For the current state see `README.MD`.
+
 **Project:** Agentic AI for Telemetry Analysis on AROL Capping Machines  
 **Role:** Person A — data pipeline, statistical analytics, and the tool interface the agent reasons through.  
 **Architecture amendment:** After completing Step 9 with 70 passing regression tests, the production data path is being refactored to **Parquet + Polars Lazy** before Step 10.

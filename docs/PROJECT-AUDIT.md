@@ -1,5 +1,7 @@
 # AROL Telemetry AI — Project Audit & Implementation Notes
 
+> **Historical record (note added 2026-10-13).** This is the chronological implementation log. Status lines such as "refactor in progress" describe the project when each entry was written; the Polars/Parquet refactor and the integration are complete. For the current state see `README.MD` and `AUDIT-REPORT.md`.
+
 **Project:** Agentic AI for Telemetry Analysis on AROL Capping Machines  
 **Role covered here:** Person A — data ingestion, validation, event-table preparation, and later deterministic analytics  
 **Current implementation status:** Steps 4–9 reference implementation complete (70/70 tests); M2.5 Polars/Parquet performance refactor in progress; Steps 4–9 Polars/Parquet refactor complete; Step 9 final event table and event-Parquet persistence complete; benchmark gate is next  

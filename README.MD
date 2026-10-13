@@ -24,7 +24,7 @@ An industrial telemetry analysis project for an AROL capping machine. It convert
 - Enough free disk space for your private CSV files and generated raw/event Parquet partitions if you plan to build a real pool. The repository does **not** include those private CSVs or built pools.
 - Ollama and a downloaded model **only if** you choose the optional local LLM planner. Rules routing, tests, and the controlled evaluation need no model.
 - An Anthropic API key, internet access and a small API budget **only if** you use the [Claude planner](#claude-planner-everyday-wording). Without them everything else works and the website uses the rules.
-- Tested with Python 3.12 (Linux/macOS) and Python 3.14.3 on Windows 11 (full suite passing on both).
+- Python 3.12 or newer. The full suite and evaluations were verified on Python 3.14.3 / Windows 11; the CI workflow (`.github/workflows/tests.yml`) runs them on Python 3.12 and 3.14 on Linux and Windows once the branch is pushed. `requirements-lock.txt` pins every package of the verified environment (`pip install -r requirements-lock.txt` for an identical setup).
 
 From a new checkout:
 
@@ -133,7 +133,7 @@ For the local website, install `requirements-web.txt`, then run `.venv/bin/strea
 
 After changing backend Python files while Streamlit is running, restart the local server. A page rerun can retain an older imported planner module even while showing updated page code.
 
-The source normally limits materialized events to **1,000,000** per request (`data.max_loaded_events`); narrow the machine, head, or time window when a query exceeds this limit. A peer comparison deliberately loads the other heads in the same machine/time window, because the specified head is the focus of the comparison.
+The source limits **materialized** events to **1,000,000** per request (`data.max_loaded_events`). Questions answered by totals (torque statistics, success rate, success rate per head) have no such limit: above it they are computed while scanning the Parquet partitions, without loading the events, and the report says so (for example average torque over 2,290,224 events in about 0.2 s). Tools that need individual rows (histogram, trend, anomalies, head comparisons, time buckets, idle) keep the limit; narrow the machine, head, or time window when such a query exceeds it. A one-day trend returns at most `analytics.trend_max_points` (2,000) points of its moving-average series; the slope and drift always use every point. A peer comparison deliberately loads the other heads in the same machine/time window, because the specified head is the focus of the comparison.
 
 ## Architecture
 
@@ -248,7 +248,8 @@ The system prompt and tool list are cached, so one question costs well under one
 | Observed throughput | Observed event count divided by the **requested** interval duration; includes partial requested buckets. |
 | Torque population | Torque statistics, histograms, trends, anomaly checks and head correlation describe **closures**: No Load cycles (head cycled without a cap, about 0 Nm) are excluded by default because they made a third of a real day's events "anomalies" and pulled the mean from about 2.0 to 1.34 Nm. Ask for `all_statuses` ("including No Load") to include them. Every report states the population used. |
 | Drift | Reported only when the latest-window slope of the torque moving average exceeds `analytics.drift_threshold_nm_per_hour` (0.05 Nm/h, a practical value still to be validated with AROL), not for any non-zero slope. |
-| Status/torque disagreements | The controller updates Status one reading after the count, so a few events (about 0.03%) carry the previous cycle's status, for example "Closure OK" at 0 Nm. They are counted in every torque report, not corrected. |
+| Status/torque disagreements | The controller updates Status one reading after the count, so a few events (about 0.03%) carry the previous cycle's status, for example "Closure OK" at 0 Nm. This is the polling-frequency versus production-cycle mismatch named in the brief. The team contract places Status on the increment row, so the events are kept as recorded and counted in every torque report, not corrected. |
+| Head-comparison success rate | `head_correlation` uses the contract's cap-present denominator (status 0 / status 0 or 65), the same as the KPI tools. |
 | Timestamps | UTC, as defined by the team contract (`docs/contract.md`) and used exactly as recorded. "Feb 1" and "per day" mean the UTC day; reports, plots and Claude's interpretation say UTC. |
 
 An empty time bucket means no **recorded** events there; it does not prove a machine was idle. A near-100% conditional cap-present success rate does not establish total production success, because No Load and missing/unreconstructed closures are different populations. Statistical torque flags and descriptive head rankings do not diagnose physical faults or prove engineering compliance. Values such as the configured torque bounds in `config.yaml` must be checked against confirmed process specifications before making engineering claims.
@@ -257,7 +258,8 @@ An empty time bucket means no **recorded** events there; it does not prove a mac
 
 ```text
 config.yaml                 Shared configuration and illustrative thresholds
-requirements*.txt           Pinned runtime, test (-dev) and website (-web) dependencies
+requirements*.txt           Pinned runtime, test (-dev), website (-web) and full lock (-lock)
+.github/workflows/          CI: tests and evaluations on Python 3.12/3.14, Linux/Windows
 src/ingestion/              CSV validation, event detection, partitioned pool
 src/analytics/              Torque analyses and explicit-denominator KPI tools
 src/common/                 Schemas, registry, configuration, scoped source
@@ -280,7 +282,7 @@ Start with [the demo guide](docs/DEMO.md) for presentation commands and [the 13-
 | `Output directory already exists` | Choose a new `--output` directory; the builder does not overwrite a prior build. |
 | Missing or invalid manifest | Build a complete event pool or pass the correct path to `--manifest`. A fresh Git checkout has no private pool. |
 | More than one pool present | Pass `--manifest data/event_pools/<pool>/manifest.json` explicitly. |
-| Scope too large | Restrict the machine, head or time window. Peer comparisons need all selected peers. |
+| Scope too large | Restrict the machine, head or time window (only row-level tools have this limit). Peer comparisons need all selected peers. |
 | Clarification needed / no tool calls | Give a supported telemetry analysis and explicit scope; the agent intentionally does not answer general questions or infer fault causes. |
 | `pytest` import mismatch in backups | Run `.venv/bin/python -m pytest tests -q` from the root rather than discovering tests inside `data/`. |
 | Local LLM unavailable | Verify Ollama is running and `ollama list` includes the configured model; use `--planner rules` for the verified default route. |
