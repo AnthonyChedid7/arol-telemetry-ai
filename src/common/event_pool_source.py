@@ -15,6 +15,11 @@ from ..ingestion.event_pool import scan_event_pool
 SUPPORTED_TOOLS = frozenset(['compare_head_success', 'detect_torque_anomalies', 'head_correlation', 'kpi_over_time', 'machine_idle', 'observed_throughput', 'rank_heads_by_success', 'success_rate', 'success_rate_per_head', 'torque_distribution', 'torque_stats', 'torque_trend'])
 
 
+# Tools whose answer is a set of totals, so they can run on a LazyFrame over any
+# scope; every other tool needs rows in memory and keeps max_loaded_events.
+LAZY_AGGREGATE_TOOLS = frozenset({"torque_stats", "success_rate", "success_rate_per_head"})
+
+
 class ScopeTooLarge(ValueError):
     """The requested scope exceeds the configured materialization limit."""
 
@@ -276,6 +281,14 @@ class EventPoolSource:
         # registered torque tools then decide which population they describe.
         selected = _apply_status_filter(selected, None if status == ALL_STATUSES else status)
         n_selected = selected.select(pl.len()).collect().item()
+        if n_selected > self.max_events and all(item[0] in LAZY_AGGREGATE_TOOLS for item in parsed):
+            # Brief objective "scalability": summary statistics and KPI counts
+            # are computed by Polars while scanning the partitions, so the
+            # events are never materialized. Row-level tools keep the limit.
+            if _stat_signature(paths) != signatures or manifest_path.read_bytes() != manifest_bytes:
+                raise ValueError("Event pool changed during the scoped read; no analysis was run")
+            return self._lazy_scope(selected, pool, manifest_path, total, partitions, n_selected,
+                                    scope, args, status, parsed, name)
         if n_selected > self.max_events:
             raise ScopeTooLarge(
                 f"Requested scope contains {n_selected:,} observed events; the configured "
@@ -309,3 +322,51 @@ class EventPoolSource:
             meta['comparison_population'] = dict(scope)
             meta['comparison_focus_head'] = args.get('head_id')
         return events, meta
+
+    def _lazy_scope(self, selected, pool, manifest_path, total, partitions, n_selected,
+                    scope, args, status, parsed, name):
+        """Return the scoped events as a LazyFrame with the same pool_meta keys."""
+        from ..ingestion.adapter import _status_range
+        names = selected.collect_schema().names()
+        if missing := [c for c in PERSON_A_COLUMNS if c not in names]:
+            raise ValueError(f"Event partitions are missing columns {missing}")
+        summary = selected.select(
+            pl.col("ts").min().alias("ts_min"), pl.col("ts").max().alias("ts_max"),
+            pl.col("status").min().alias("status_min"), pl.col("status").max().alias("status_max"),
+        ).collect().row(0, named=True)
+        low, high = _status_range()
+        if summary["status_min"] is not None and (summary["status_min"] < low or summary["status_max"] > high):
+            raise ValueError("Status codes outside the contract range; no analysis was run")
+        machines = sorted(selected.select(pl.col("machine_id").drop_nulls().unique()).collect()
+                          .to_series().to_list())
+        heads = sorted(selected.select(pl.col("head_id").drop_nulls().unique()).collect()
+                       .to_series().to_list())
+        selection = dict(scope)
+        if "status_filter" in args:
+            selection["status_filter"] = status
+        meta = {
+            "pool": pool, "source": self.name, "n_files": len(partitions),
+            "n_events": n_selected,
+            "ts_min": summary["ts_min"].isoformat() if summary["ts_min"] else None,
+            "ts_max": summary["ts_max"].isoformat() if summary["ts_max"] else None,
+            "machines": machines, "heads": heads,
+            "timezone": self.cfg.get("data", {}).get("timezone"),
+            "rows_read": None, "rows_after_cleaning": None, "duplicates_removed": None,
+            "schema_version": schema.SCHEMA_VERSION,
+            "warnings": [
+                "These are observed exact +1 closure events. Counter discontinuities are not "
+                "reconstructed, and total production completeness is not measured.",
+                f"The scope holds {n_selected:,} events, above the {self.max_events:,}-event "
+                "materialization limit, so the totals were computed while scanning the "
+                "partitions without loading the events into memory.",
+            ],
+            "event_manifest": str(manifest_path), "pool_total_events": total,
+            "loaded_events": n_selected, "selection_parameters": selection,
+            "planned_tool": name if len(parsed) == 1 else None,
+            "planned_arguments": args if len(parsed) == 1 else None,
+            "planned_calls": [(item[0], item[1]) for item in parsed],
+            "max_loaded_events": self.max_events,
+            "materialization": "aggregated lazily; events not loaded into memory",
+            "verified_partition_hashes": self.verify_hashes,
+        }
+        return selected, meta

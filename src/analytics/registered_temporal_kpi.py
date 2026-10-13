@@ -63,10 +63,10 @@ def _run(events, *, machine_id, start, end, bucket, head_id=None, throughput=Fal
     maximum = current_config().get('analytics', {}).get('max_time_buckets', 1000)
     grid = validate_request(machine_id, start, end, bucket, maximum)
     frame, applied, min_n = _prepare(events, machine_id=machine_id, start=start, end=end, head_id=head_id)
-    overall = finish_counts(frame.select(_aggregations()).row(0, named=True), min_n)
+    overall = finish_counts(frame.select(_aggregations()).collect().row(0, named=True), min_n)
     empty = {key: 0 for key in overall if key.startswith('n_')}
     grouped = (frame.with_columns(pl.col('ts').dt.truncate('1h' if bucket == 'hour' else '1d').alias('_bucket'))
-               .group_by('_bucket').agg(_aggregations()))
+               .group_by('_bucket').agg(_aggregations()).collect())
     buckets = {row.pop('_bucket'): row for row in grouped.to_dicts()}
     by_bucket = []
     for bounds in grid:
@@ -91,7 +91,7 @@ def _run(events, *, machine_id, start, end, bucket, head_id=None, throughput=Fal
                   rate_definitions=dict(DEFINITIONS),
                   throughput_denominator='requested interval duration, not observed first-to-last event span',
                   telemetry_coverage='not_established_from_event_table',
-                  bucket_timezone='timestamps used as stored; timezone and DST elapsed-time semantics unconfirmed')
+                  bucket_timezone='UTC (team contract); calendar buckets are UTC hours/days')
     applied += [f'calendar bucket={bucket}; intervals clipped to requested start/end']
     notes = ('Observed exact +1 events only; counter discontinuities are not reconstructed. '
              'Counts include all statuses and do not require finite torque. '
@@ -100,10 +100,10 @@ def _run(events, *, machine_id, start, end, bucket, head_id=None, throughput=Fal
              'The total rate is computed from total counts and total duration, not an unweighted mean of bucket rates. '
              'Zero observed events do not establish zero production or machine downtime. '
              'Telemetry coverage and the machine operating schedule are not established from event rows. '
-             'Naive timestamps are used as stored; no UTC or DST normalization is claimed. '
+             'Timestamps are UTC as defined by the team contract; buckets are UTC hours/days. '
              + ('meta.n counts observed events.' if throughput else 'meta.n counts confirmed cap-present events.'))
     return envelope(result, n=overall['n_observed'] if throughput else overall['n_cap_present'],
-                    filters_applied=applied, window=data_window(frame), notes=notes,
+                    filters_applied=applied, window=data_window(frame.select('ts').collect()), notes=notes,
                     units={**{name:'fraction' for name in DEFINITIONS},'duration_seconds':'s',
                            'observed_events_per_hour':'observed events/hour',
                            'incremental_mean_bucket_observed_rates':'observed events/hour (unweighted bucket mean)',

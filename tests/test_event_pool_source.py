@@ -137,11 +137,31 @@ def test_size_guard_stops_before_adapter_or_tool_dispatch(pool, monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("Must not materialize or dispatch")
     monkeypatch.setattr(event_pool_source, "adapt", forbidden)
-    answer = Orchestrator(cfg=cfg).answer(SCOPED)
+    # A histogram needs its rows in memory, so the materialization limit applies.
+    answer = Orchestrator(cfg=cfg).answer(SCOPED.replace("Average torque", "Show torque distribution"))
     assert answer["status"] == "needs_clarification"
     assert "2 observed events" in answer["message"]
     assert answer["results"] == []
     assert answer["trace"].to_dict()["n_tool_calls"] == 0
+
+
+def test_aggregate_over_the_limit_runs_lazily_without_materializing(pool, monkeypatch):
+    cfg, _, _ = pool
+    cfg["data"]["max_loaded_events"] = 1
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Must not materialize events")
+    monkeypatch.setattr(event_pool_source, "adapt", forbidden)
+    answer = Orchestrator(cfg=cfg).answer(SCOPED)
+    assert answer["status"] == "ok"
+    response = answer["results"][0][1]
+    assert response["ok"] and response["result"]["sample_size"] == 2
+    assert answer["pool_meta"]["materialization"] == "aggregated lazily; events not loaded into memory"
+    assert "without loading the events into memory" in answer["markdown"]
+    # Same numbers as the materialized path with a generous limit.
+    cfg["data"]["max_loaded_events"] = 1_000_000
+    monkeypatch.undo()
+    eager = Orchestrator(cfg=cfg).answer(SCOPED)["results"][0][1]["result"]
+    assert eager == response["result"]
 
 
 @pytest.mark.parametrize("limit", [0, -1, True, "100", 1.5])

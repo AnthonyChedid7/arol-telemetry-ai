@@ -115,7 +115,11 @@ class Orchestrator:
             else:
                 events = self.source.load_pool(pool)
                 meta = self.source.pool_meta(pool)
-            trace.step("load_pool", pool=pool, n_events=int(len(events)),
+            # A LazyFrame (whole-pool aggregate) has no length; the source counted it.
+            n_events = (meta.get("loaded_events") if hasattr(events, "collect")
+                        and not hasattr(events, "height") else len(events))
+            trace.step("load_pool", pool=pool, n_events=int(n_events),
+                       materialization=meta.get("materialization"),
                        source=self.source.name,
                        pool_total_events=meta.get("pool_total_events"),
                        selection_parameters=meta.get("selection_parameters"),

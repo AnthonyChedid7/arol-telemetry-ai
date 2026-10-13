@@ -34,9 +34,11 @@ def registered_torque_stats(events, *, status_filter=None,
     result = calculate_torque_stats(population, status_filter=inner)
 
     # Metadata describes the observations actually used in the calculation.
-    used = _apply_status_filter(population, inner).filter(
+    # Only the timestamps are collected, so this also works on a whole-pool LazyFrame.
+    used = _apply_status_filter(population, inner).lazy().filter(
         pl.col("torque").is_not_null() & pl.col("torque").is_finite()
-    ).collect()
+    )
+    used = used.select("ts").collect() if "ts" in used.collect_schema().names() else None
 
     filters = applied + ["torque is non-null and finite"]
     filters.insert(0, f"population: {label}")

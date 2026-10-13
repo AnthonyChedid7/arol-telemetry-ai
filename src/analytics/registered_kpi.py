@@ -79,10 +79,18 @@ def _prepare(events, *, start=None, end=None, head_id=None, machine_id=None):
             or schema['machine_id'] != pl.String or schema['head_id'] != pl.String
             or schema['ts'].base_type() != pl.Datetime or schema['ts'].time_zone is not None):
         raise ValueError('KPI inputs require integer status, nullable Boolean flags, string identifiers/classes and naive Datetime ts')
-    frame = scoped.collect()
-    if any(frame[c].null_count() for c in ('status', 'machine_id', 'head_id', 'ts')):
+    # The checks and aggregations run lazily, so a whole-pool scope is never
+    # materialized (brief: scalability); eager inputs give identical results.
+    frame = scoped.lazy()
+    checks = frame.select(
+        pl.any_horizontal(*(pl.col(c).is_null() for c in ('status', 'machine_id', 'head_id', 'ts')))
+        .sum().alias('nulls'),
+        ((pl.col('machine_id').str.strip_chars() == '') | (pl.col('head_id').str.strip_chars() == ''))
+        .sum().alias('blank'),
+    ).collect().row(0, named=True)
+    if checks['nulls']:
         raise ValueError('KPI events require non-null status, identifiers and timestamps')
-    if frame.filter((pl.col('machine_id').str.strip_chars() == '') | (pl.col('head_id').str.strip_chars() == '')).height:
+    if checks['blank']:
         raise ValueError('KPI identifiers must not be empty')
     min_n = current_config().get('analytics', {}).get('min_n', 30)
     if type(min_n) is not int or min_n < 1:
@@ -92,10 +100,11 @@ def _prepare(events, *, start=None, end=None, head_id=None, machine_id=None):
 
 def _calculate(events, *, per_head, start=None, end=None, head_id=None, machine_id=None):
     frame, applied, min_n = _prepare(events, start=start, end=end, head_id=head_id, machine_id=machine_id)
-    overall = finish_counts(frame.select(_aggregations()).row(0, named=True), min_n)
+    overall = finish_counts(frame.select(_aggregations()).collect().row(0, named=True), min_n)
     result = {'overall': overall, 'rate_definitions': dict(DEFINITIONS)}
     if per_head:
-        groups = frame.group_by('machine_id', 'head_id').agg(_aggregations()).sort(['machine_id', 'head_id'])
+        groups = (frame.group_by('machine_id', 'head_id').agg(_aggregations())
+                  .sort(['machine_id', 'head_id']).collect())
         result['per_head'] = [finish_counts(row, min_n) for row in groups.to_dicts()]
         result['n_head_groups'] = len(result['per_head'])
         result['n_groups_below_min_cap_present_n'] = sum(r['below_min_cap_present_n'] for r in result['per_head'])
@@ -107,7 +116,8 @@ def _calculate(events, *, per_head, start=None, end=None, head_id=None, machine_
     if per_head:
         notes += f" {result['n_groups_below_min_cap_present_n']} machine/head groups have fewer than {min_n} cap-present observations; no head ranking or statistical significance claim is made."
     return envelope(result, n=overall['n_cap_present'], filters_applied=applied,
-                    window=data_window(frame), units={name: 'fraction' for name in DEFINITIONS}, notes=notes)
+                    window=data_window(frame.select('ts').collect()),
+                    units={name: 'fraction' for name in DEFINITIONS}, notes=notes)
 
 
 @tool(name='success_rate', description='Observed-event KPI counts and explicitly labelled cap-present success and rejection fractions. Unknown cap presence is reported separately.', params=SCOPE, agent='kpi', owner='integration')
