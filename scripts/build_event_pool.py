@@ -18,6 +18,11 @@ def _git(*arguments):
     return subprocess.check_output(["git", *arguments], cwd=ROOT, text=True).strip()
 
 
+def _display(path):
+    path = Path(path).resolve()
+    return path.relative_to(ROOT).as_posix() if path.is_relative_to(ROOT) else str(path)
+
+
 def _append_checkpoint(heading, entry):
     for name in ("PROJECT-AUDIT.md", "INTEGRATION-TRACKER.md"):
         path = ROOT / "docs" / name
@@ -32,6 +37,9 @@ def main(argv=None):
     parser.add_argument("--pattern", required=True, help="Repository-relative CSV glob, in chronological filename order")
     parser.add_argument("--audit", type=Path, help="Existing full counter audit JSON")
     parser.add_argument("--output", type=Path, help="New output directory; existing directories are never overwritten")
+    parser.add_argument("--record", action="store_true",
+                        help="Also save evidence under benchmarks/integration/ and append a checkpoint to "
+                             "docs/PROJECT-AUDIT.md and docs/INTEGRATION-TRACKER.md (changes tracked files)")
     args = parser.parse_args(argv)
     if Path.cwd().resolve() != ROOT:
         parser.error("Run this command from the repository root")
@@ -97,7 +105,8 @@ def main(argv=None):
             "Raw and event Parquet are retained. This batch builds a fresh pool; no resume/cache reuse yet.",
         ],
     }
-    evidence_dir = ROOT / "benchmarks" / "integration"
+    # Without --record the evidence stays next to the built pool (ignored data/).
+    evidence_dir = ROOT / "benchmarks" / "integration" if args.record else output
     evidence_dir.mkdir(parents=True, exist_ok=True)
     evidence_path = evidence_dir / f"continuous_event_pool_{stamp}.json"
     evidence_path.write_text(json.dumps(evidence, indent=2, allow_nan=False) + "\n", encoding="utf-8")
@@ -109,7 +118,7 @@ def main(argv=None):
         f"- Observed exact +1 events: {s['observed_events']}.\n"
         f"- Cross-file exact +1 events retained: {s['boundary_exact_plus_one']}.\n"
         f"- Agreement with prior full counter audit: {verified}.\n"
-        f"- Evidence: {evidence_path.relative_to(ROOT).as_posix()}.\n"
+        f"- Evidence: {_display(evidence_path)}.\n"
         f"- Pool: {displayed_manifest}.\n\n"
         "The first observation is the pool baseline. Later partitions carry the preceding "
         "observation. Empty files preserve it. Discontinuities are measured, not reconstructed. "
@@ -119,13 +128,15 @@ def main(argv=None):
         "Next action: inspect audit comparison results, then connect manifest-backed, "
         "scope-filtered event loading to the orchestrator."
     )
-    _append_checkpoint(heading, entry)
+    if args.record:
+        _append_checkpoint(heading, entry)
     print("\nCONTINUOUS EVENT POOL SUMMARY")
     print(json.dumps(s, indent=2))
     print(f"\nCounter-audit agreement: {verified}")
     print(f"Manifest: {displayed_manifest}")
-    print(f"Evidence: {evidence_path.relative_to(ROOT).as_posix()}")
-    print("Updated both audit documents. No agent or live model request was run.")
+    print(f"Evidence: {_display(evidence_path)}")
+    print(("Updated both audit documents. " if args.record else "Tracked files unchanged (use --record to save evidence). ")
+          + "No agent or live model request was run.")
     if verified is False:
         print(json.dumps({key: value for key, value in checks.items() if not value['match']}, indent=2))
         return 1

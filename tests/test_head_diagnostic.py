@@ -112,7 +112,8 @@ def test_experimental_llm_still_uses_strict_torque_gate(monkeypatch):
 
 
 def test_web_page_asks_for_window_then_shows_evidence(cfg, tmp_path, monkeypatch):
-    from streamlit.testing.v1 import AppTest
+    # The website is optional (requirements-web.txt); skip rather than fail without it.
+    AppTest = pytest.importorskip("streamlit.testing.v1").AppTest
 
     monkeypatch.setenv("AROL_MANIFEST", cfg["data"]["person_a"]["demo"])
     app = AppTest.from_file(

@@ -193,9 +193,14 @@ def evaluate(catalogue: dict, cfg: dict, run_dir: Path) -> list[dict]:
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, help='New ignored run directory; default under data/integration_smoke/')
+    parser.add_argument('--record', action='store_true',
+                        help='Also save the evidence under benchmarks/integration/ and append a checkpoint '
+                             'to docs/PROJECT-AUDIT.md and docs/INTEGRATION-TRACKER.md (changes tracked files)')
     args=parser.parse_args(argv)
     if Path.cwd().resolve() != ROOT:
         parser.error('Run from repository root')
+    if not __debug__:
+        parser.error('Run without -O: the evaluation checks are assert statements')
     catalogue=json.loads(CATALOGUE.read_text(encoding='utf-8'))
     assert catalogue['version'] == 1 and len(catalogue['cases']) == 28
     stamp=datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-%f')
@@ -242,7 +247,9 @@ def main(argv=None):
                         'This deterministic evaluation does not make live model requests or estimate model language accuracy.',
                         'One short synthetic pool with four heads; no full-pool scalability claim.'],
               'run_dir':path_for_evidence(run_dir)}
-    target=ROOT/'benchmarks/integration'/f'agent_evaluation_{stamp}.json'
+    # By default nothing tracked changes; --record promotes the run to evidence.
+    target=(ROOT/'benchmarks/integration'/f'agent_evaluation_{stamp}.json' if args.record
+            else run_dir/'agent_evaluation.json')
     target.write_text(json.dumps(evidence,indent=2,allow_nan=False)+'\n',encoding='utf-8')
     heading=f'## Integration measurement — fixed new questions and planted signals {stamp}'
     entry=(heading+'\n\n'
@@ -251,9 +258,9 @@ def main(argv=None):
            f'{evidence["clarifications_without_load"]}/{len(clarification)} clarification cases passed.\n'
            '- Planted counter events matched an independent scalar field oracle, including four cross-file events.\n'
            '- H05 had four status-65 records and two planted torque limit breaches; describe these as signals, not causes.\n'
-           f'- Evidence: {target.relative_to(ROOT)}. No live LLM requests.\n'
+           f'- Evidence: {path_for_evidence(target)}. No live LLM requests.\n'
            '- Remaining: clean checkout, presentation review, and any explicitly defined causal/operating-time inputs.\n')
-    for name in ('PROJECT-AUDIT.md','INTEGRATION-TRACKER.md'):
+    for name in ('PROJECT-AUDIT.md','INTEGRATION-TRACKER.md') if args.record else ():
         path=ROOT/'docs'/name
         path.write_text(path.read_text(encoding='utf-8').rstrip()+'\n\n'+entry,encoding='utf-8')
     print('EVALUATION RESULT')
@@ -263,7 +270,7 @@ def main(argv=None):
                       'clarified_without_load':evidence['clarifications_without_load'],
                       'clarification_total':len(clarification),
                       'scalar_event_field_parity':True,'boundary_events':4,
-                      'evidence':target.relative_to(ROOT).as_posix()},indent=2))
+                      'evidence':path_for_evidence(target)},indent=2))
     raise SystemExit(0 if passed==len(records) else 1)
 
 

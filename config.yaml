@@ -3,27 +3,21 @@ data:
     sample:
       - data/sample.csv
 
-  canonical_format: parquet
-
-  parquet_root: data/parquet
-
-  event_parquet_root: data/events
-
-  n_heads: null
-
   # Timestamps are used exactly as recorded. The AROL files appear to be UTC: each
-  # file named for a day starts at 16:00 the day before, which suggests the plant runs on UTC+8, but this is not
-  # confirmed, so nothing is converted. Shown in every report.
+  # file named for a day starts at 16:00 the day before, which suggests the plant
+  # runs on UTC+8, but this is not confirmed, so nothing is converted. Shown in
+  # every report.
   timezone: as recorded, apparently UTC (plant local time unconfirmed, likely UTC+8)
 
+  # Checked by the ingestion validation report.
   units:
     AppTorque: Nm
 
-
-processing:
-  engine: polars
-
-  lazy: true
+  # Upper bound on events materialized for one question; broader questions are
+  # asked to narrow their scope.
+  max_loaded_events: 1000000
+  # Re-hash every partition against the manifest on each read (slow, thorough).
+  verify_pool_hashes: false
 
 analytics:
   torque_expected_min: 1.5
@@ -36,8 +30,14 @@ analytics:
   drift_threshold_nm_per_hour: 0.05
   # Events whose status contradicts torque at this boundary are flagged.
   status_torque_mismatch_nm: 0.5
+  # Groups with fewer events are reported as below the minimum sample size.
+  min_n: 30
+  # Upper bound on hourly/daily buckets in one time-series question.
+  max_time_buckets: 1000
 
 agent:
+  # Upper bound on tool calls in one plan; larger plans are refused, not truncated.
+  max_steps: 8
   llm:
     model: qwen2.5-coder:14b
   # Claude planner (agent.planner: claude). The API key is read from the

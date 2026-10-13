@@ -33,12 +33,12 @@ git clone https://github.com/EddyKhoury/arol-telemetry-ai.git
 cd arol-telemetry-ai
 python3.12 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install -r requirements-dev.txt   # runtime packages + pytest
 .venv/bin/python -m pip install -r requirements-web.txt   # only for the Streamlit website
 .venv/bin/python -m pytest tests -q
 ```
 
-Run commands from the **repository root**. The project pins its Python packages in `requirements.txt`; its processing uses Polars and Parquet, tests use pytest, and configuration uses PyYAML. Running `pytest tests -q` selects the actual suite and avoids accidentally collecting backed-up test files stored elsewhere in a local working directory.
+Run commands from the **repository root**. Runtime packages are pinned in `requirements.txt` (Polars and Parquet for processing, PyYAML for configuration, the Anthropic SDK for the optional Claude planner); `requirements-dev.txt` adds pytest and `requirements-web.txt` adds Streamlit. Without Streamlit the one website test is skipped. Tests never contact a model API, even when a key is set. Running `pytest tests -q` selects the actual suite and avoids accidentally collecting backed-up test files stored elsewhere in a local working directory.
 
 On Windows, substitute `.venv\Scripts\python` for `.venv/bin/python` in the commands below. If `python3.12` is unavailable, install Python 3.12 first and check `python3.12 --version`.
 
@@ -62,9 +62,9 @@ For a committed, clean Git checkout, you can also run:
 .venv/bin/python -m scripts.check_clean_checkout
 ```
 
-Run it **before** `scripts.evaluate_agent`, or commit/remove the evidence file that the evaluator writes to `benchmarks/integration/`: the clean-checkout check refuses to run when untracked files are present.
+The evaluators leave tracked files untouched by default: `scripts.evaluate_agent` writes its evidence into its run folder under `data/`, and `scripts.build_event_pool` next to the pool. Pass `--record` to promote a run to `benchmarks/integration/` and append a checkpoint to `docs/PROJECT-AUDIT.md` and `docs/INTEGRATION-TRACKER.md`; commit those changes before running the clean-checkout check, which refuses to run on a modified tree.
 
-This runs tests and the controlled evaluation from a temporary detached checkout with the current virtual environment. It requires `git status --short` to show no changes and does not test dependency installation, private telemetry, or a live model. In a previous release review the clean checkout reported **848 passed, 4 skipped**, then **28/28** controlled cases; these are recorded historical results, not promised counts for future revisions. Current results come from the commands you run.
+This runs tests and the controlled evaluation from a temporary detached checkout with the current virtual environment. It requires `git status --short` to show no changes and does not test dependency installation, private telemetry, or a live model. In a previous release review the clean checkout reported **848 passed, 4 skipped** (932 passed, 4 skipped on the `claude-planner` branch), then **28/28** controlled cases; these are recorded historical results, not promised counts for future revisions. Current results come from the commands you run.
 
 ## Prepare a real event pool
 
@@ -257,7 +257,7 @@ An empty time bucket means no **recorded** events there; it does not prove a mac
 
 ```text
 config.yaml                 Shared configuration and illustrative thresholds
-requirements.txt            Pinned Python dependencies
+requirements*.txt           Pinned runtime, test (-dev) and website (-web) dependencies
 src/ingestion/              CSV validation, event detection, partitioned pool
 src/analytics/              Torque analyses and explicit-denominator KPI tools
 src/common/                 Schemas, registry, configuration, scoped source

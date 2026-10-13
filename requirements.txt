@@ -1,15 +1,12 @@
-iniconfig==2.3.0
+# Runtime dependencies. Tests: requirements-dev.txt. Website: requirements-web.txt.
 numpy==2.5.2
-packaging==26.3
-pandas==3.0.5
-pluggy==1.6.0
 polars==1.44.2
 polars-runtime-32==1.44.2
-matplotlib==3.10.8
 pyarrow==25.0.1
-Pygments==2.21.0
-pytest==9.1.1
+pandas==3.0.5
 python-dateutil==2.9.0.post0
-PyYAML==6.0.3
 six==1.17.0
+matplotlib==3.10.8
+packaging==26.3
+PyYAML==6.0.3
 anthropic==1.13.0

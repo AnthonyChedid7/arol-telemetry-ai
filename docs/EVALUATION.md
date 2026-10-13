@@ -11,9 +11,11 @@ The evaluator reads the fixed questions in
 `benchmarks/evaluation/prompts_v1.json`. These are **16 new supported
 phrasings** with exact expected tool names and arguments, plus **12 requests
 that should stop for clarification**. It records each result, including any
-failure, in `benchmarks/integration/agent_evaluation_*.json`. Complete case
-results, reports, traces, synthetic CSVs and the event-pool manifest are saved
-under ignored `data/integration_smoke/agent-evaluation-*/`.
+failure, in `agent_evaluation.json` inside its run folder under ignored
+`data/integration_smoke/agent-evaluation-*/`, together with complete case
+results, reports, traces, synthetic CSVs and the event-pool manifest. Add
+`--record` to also save `benchmarks/integration/agent_evaluation_*.json` and
+append a checkpoint to the audit documents (this changes tracked files).
 
 The run creates two tiny synthetic telemetry CSVs with four heads. Each head
 has twelve observed exact +1 events. Four events per machine occur at the
