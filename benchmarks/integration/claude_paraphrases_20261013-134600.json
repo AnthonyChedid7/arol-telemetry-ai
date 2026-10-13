@@ -1,5 +1,5 @@
 {
-  "created_utc": "2026-10-13T13:26:14.126801+00:00",
+  "created_utc": "2026-10-13T13:46:00.331575+00:00",
   "model": "claude-opus-5-5",
   "effort": "low",
   "manifest": "data/event_pools/feb01-03/manifest.json",
@@ -15,11 +15,11 @@
   "n_questions": 16,
   "token_usage": {
     "input_tokens": 2788,
-    "output_tokens": 2638,
-    "cache_read_input_tokens": 86048,
+    "output_tokens": 2733,
+    "cache_read_input_tokens": 87792,
     "cache_creation_input_tokens": 0
   },
-  "estimated_cost_usd": 0.0811,
+  "estimated_cost_usd": 0.0834,
   "limits": [
     "Planning only: tool choice and arguments are compared; no event data is loaded.",
     "Expected calls were written by hand for this pool; machine_id is ignored where it is optional and equals the pool's only machine.",
@@ -403,18 +403,18 @@
           "compare_head_success",
           {
             "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
-            "head_id": "H04",
             "start": "2026-02-01T09:00:00",
-            "end": "2026-02-01T10:00:00"
+            "end": "2026-02-01T10:00:00",
+            "head_id": "H04"
           }
         ],
         [
           "detect_torque_anomalies",
           {
             "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
-            "head_id": "H04",
             "start": "2026-02-01T09:00:00",
-            "end": "2026-02-01T10:00:00"
+            "end": "2026-02-01T10:00:00",
+            "head_id": "H04"
           }
         ]
       ],
@@ -460,7 +460,7 @@
       "expected": null,
       "claude_calls": [],
       "claude_interpretation": "",
-      "claude_clarification": "To check head 4, I need a time window, because the head comparison only works over a set period. What period should I use? For example, a single day such as 2026-02-02, or all the available data from 2026-01-31 16:00 to 2026-02-03 16:00.",
+      "claude_clarification": "Which time window should I check head 4 (H04) over? For example, all the data (2026-01-31 16:00 to 2026-02-03 16:00), or a specific day or shift.",
       "claude_correct": true,
       "rules_calls": [],
       "rules_correct": true
@@ -470,7 +470,7 @@
       "expected": null,
       "claude_calls": [],
       "claude_interpretation": "",
-      "claude_clarification": "I can't check the weather. I can only analyse capping-machine data, like torque, success rates, throughput and idle time. What would you like to know about machine MCC777eda3db57348ef8a3113a642ae74db between 31 January and 3 February 2026?",
+      "claude_clarification": "I can't look up the weather. These tools only cover telemetry from capping machines. For machine MCC777eda3db57348ef8a3113a642ae74db, I can look at:\n\n* **Torque:** stats, trends or unusual values\n* **Success rates:** overall, per head, or how one head compares with the others\n* **Throughput:** caps per hour or per day\n* **Idle time:** periods when the machine wasn't running\n\nThe data runs from 2026-01-31T16:00:00 to 2026-02-03T15:59:59. Would you like to look at any of these?",
       "claude_correct": true,
       "rules_calls": [],
       "rules_correct": true

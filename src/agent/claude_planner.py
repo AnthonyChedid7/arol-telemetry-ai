@@ -71,8 +71,12 @@ empty strings.
 00:00:00 that day until 00:00:00 the next day. "Morning" means 06:00-12:00, \
 "afternoon" 12:00-18:00, "evening" 18:00-24:00, "night" 00:00-06:00, "the first \
 hour" means the first hour of the data. Resolve dates against the data range \
-given in the request context, not against today's real date. If the context \
-says the data covers one day, "today" means that day.
+given in the request context, not against today's real date. Recorded data has \
+no "today": if the user uses a relative day (today, yesterday, last night, this \
+week, recently) and the data covers more than one calendar day, do not pick a \
+day; ask which date they mean. Only when the data covers a single calendar day \
+may "today" or "this morning" refer to that day. Positional phrases tied to \
+the data ("the first hour of data", "the last day", "all the data") are fine.
 - When the context names the machine in this data pool and the user does not \
 name one, use that machine_id exactly (machine ids are case-sensitive).
 - Thresholds, windows, sigma values and limits are configured by the \
