@@ -1,0 +1,479 @@
+{
+  "created_utc": "2026-10-13T13:26:14.126801+00:00",
+  "model": "claude-opus-5-5",
+  "effort": "low",
+  "manifest": "data/event_pools/feb01-03/manifest.json",
+  "pool_summary": {
+    "machines": [
+      "MCC777eda3db57348ef8a3113a642ae74db"
+    ],
+    "ts_min": "2026-01-31T16:00:00",
+    "ts_max": "2026-02-03T15:59:59"
+  },
+  "claude_correct": 16,
+  "rules_correct": 2,
+  "n_questions": 16,
+  "token_usage": {
+    "input_tokens": 2788,
+    "output_tokens": 2638,
+    "cache_read_input_tokens": 86048,
+    "cache_creation_input_tokens": 0
+  },
+  "estimated_cost_usd": 0.0811,
+  "limits": [
+    "Planning only: tool choice and arguments are compared; no event data is loaded.",
+    "Expected calls were written by hand for this pool; machine_id is ignored where it is optional and equals the pool's only machine.",
+    "A small hand-written question set, not a representative sample of operator language."
+  ],
+  "cases": [
+    {
+      "question": "how hard did spindle 5 tighten caps on February 1st?",
+      "expected": [
+        [
+          "torque_stats",
+          {
+            "head_id": "H05",
+            "start": "2026-02-01T00:00:00",
+            "end": "2026-02-02T00:00:00"
+          }
+        ]
+      ],
+      "claude_calls": [
+        [
+          "torque_stats",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "head_id": "H05",
+            "start": "2026-02-01T00:00:00",
+            "end": "2026-02-02T00:00:00"
+          }
+        ]
+      ],
+      "claude_interpretation": "`torque_stats` (head H05, machine MCC777eda3db57348ef8a3113a642ae74db, 2026-02-01T00:00:00 -> 2026-02-02T00:00:00)",
+      "claude_clarification": "",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": false
+    },
+    {
+      "question": "show me the spread of tightening force for head 12 on Feb 2, 20 bins",
+      "expected": [
+        [
+          "torque_distribution",
+          {
+            "head_id": "H12",
+            "bins": 20,
+            "start": "2026-02-02T00:00:00",
+            "end": "2026-02-03T00:00:00"
+          }
+        ]
+      ],
+      "claude_calls": [
+        [
+          "torque_distribution",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "head_id": "H12",
+            "start": "2026-02-02T00:00:00",
+            "end": "2026-02-03T00:00:00",
+            "bins": 20
+          }
+        ]
+      ],
+      "claude_interpretation": "`torque_distribution` (head H12, machine MCC777eda3db57348ef8a3113a642ae74db, 2026-02-02T00:00:00 -> 2026-02-03T00:00:00, 20 bins)",
+      "claude_clarification": "",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": false
+    },
+    {
+      "question": "is the torque drifting on spindle 3 during Feb 2?",
+      "expected": [
+        [
+          "torque_trend",
+          {
+            "head_id": "H03",
+            "start": "2026-02-02T00:00:00",
+            "end": "2026-02-03T00:00:00"
+          }
+        ]
+      ],
+      "claude_calls": [
+        [
+          "torque_trend",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "head_id": "H03",
+            "start": "2026-02-02T00:00:00",
+            "end": "2026-02-03T00:00:00"
+          }
+        ]
+      ],
+      "claude_interpretation": "`torque_trend` (head H03, machine MCC777eda3db57348ef8a3113a642ae74db, 2026-02-02T00:00:00 -> 2026-02-03T00:00:00)",
+      "claude_clarification": "",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": false
+    },
+    {
+      "question": "any weird torque values on head 7 between 8 and 10 am on Feb 1?",
+      "expected": [
+        [
+          "detect_torque_anomalies",
+          {
+            "head_id": "H07",
+            "start": "2026-02-01T08:00:00",
+            "end": "2026-02-01T10:00:00"
+          }
+        ]
+      ],
+      "claude_calls": [
+        [
+          "detect_torque_anomalies",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "head_id": "H07",
+            "start": "2026-02-01T08:00:00",
+            "end": "2026-02-01T10:00:00"
+          }
+        ]
+      ],
+      "claude_interpretation": "`detect_torque_anomalies` (head H07, machine MCC777eda3db57348ef8a3113a642ae74db, 2026-02-01T08:00:00 -> 2026-02-01T10:00:00)",
+      "claude_clarification": "",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": false
+    },
+    {
+      "question": "compare the torque of heads 1 and 2 on Feb 1",
+      "expected": [
+        [
+          "head_correlation",
+          {
+            "head_a": "H01",
+            "head_b": "H02",
+            "start": "2026-02-01T00:00:00",
+            "end": "2026-02-02T00:00:00"
+          }
+        ]
+      ],
+      "claude_calls": [
+        [
+          "head_correlation",
+          {
+            "head_a": "H01",
+            "head_b": "H02",
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "start": "2026-02-01T00:00:00",
+            "end": "2026-02-02T00:00:00"
+          }
+        ]
+      ],
+      "claude_interpretation": "`head_correlation` (heads H01 vs H02, machine MCC777eda3db57348ef8a3113a642ae74db, 2026-02-01T00:00:00 -> 2026-02-02T00:00:00)",
+      "claude_clarification": "",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": false
+    },
+    {
+      "question": "what's the yield of the machine on February 2nd?",
+      "expected": [
+        [
+          "success_rate",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "start": "2026-02-02T00:00:00",
+            "end": "2026-02-03T00:00:00"
+          }
+        ]
+      ],
+      "claude_calls": [
+        [
+          "success_rate",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "start": "2026-02-02T00:00:00",
+            "end": "2026-02-03T00:00:00"
+          }
+        ]
+      ],
+      "claude_interpretation": "`success_rate` (machine MCC777eda3db57348ef8a3113a642ae74db, 2026-02-02T00:00:00 -> 2026-02-03T00:00:00)",
+      "claude_clarification": "",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": false
+    },
+    {
+      "question": "give me the reject rate for each spindle on Feb 1",
+      "expected": [
+        [
+          "success_rate_per_head",
+          {
+            "start": "2026-02-01T00:00:00",
+            "end": "2026-02-02T00:00:00"
+          }
+        ]
+      ],
+      "claude_calls": [
+        [
+          "success_rate_per_head",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "start": "2026-02-01T00:00:00",
+            "end": "2026-02-02T00:00:00"
+          }
+        ]
+      ],
+      "claude_interpretation": "`success_rate_per_head` (machine MCC777eda3db57348ef8a3113a642ae74db, 2026-02-01T00:00:00 -> 2026-02-02T00:00:00)",
+      "claude_clarification": "",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": false
+    },
+    {
+      "question": "which spindle performed worst on Feb 2?",
+      "expected": [
+        [
+          "rank_heads_by_success",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "start": "2026-02-02T00:00:00",
+            "end": "2026-02-03T00:00:00"
+          }
+        ]
+      ],
+      "claude_calls": [
+        [
+          "rank_heads_by_success",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "start": "2026-02-02T00:00:00",
+            "end": "2026-02-03T00:00:00"
+          }
+        ]
+      ],
+      "claude_interpretation": "`rank_heads_by_success` (machine MCC777eda3db57348ef8a3113a642ae74db, 2026-02-02T00:00:00 -> 2026-02-03T00:00:00)",
+      "claude_clarification": "",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": false
+    },
+    {
+      "question": "is head 9 doing worse than the others on the morning of Feb 1?",
+      "expected": [
+        [
+          "compare_head_success",
+          {
+            "head_id": "H09",
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "start": "2026-02-01T06:00:00",
+            "end": "2026-02-01T12:00:00"
+          }
+        ]
+      ],
+      "claude_calls": [
+        [
+          "compare_head_success",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "start": "2026-02-01T06:00:00",
+            "end": "2026-02-01T12:00:00",
+            "head_id": "H09"
+          }
+        ]
+      ],
+      "claude_interpretation": "`compare_head_success` (head H09, machine MCC777eda3db57348ef8a3113a642ae74db, 2026-02-01T06:00:00 -> 2026-02-01T12:00:00)",
+      "claude_clarification": "",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": false
+    },
+    {
+      "question": "how many caps per hour did we make on Feb 1 between 6 and 10?",
+      "expected": [
+        [
+          "observed_throughput",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "bucket": "hour",
+            "start": "2026-02-01T06:00:00",
+            "end": "2026-02-01T10:00:00"
+          }
+        ]
+      ],
+      "claude_calls": [
+        [
+          "observed_throughput",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "start": "2026-02-01T06:00:00",
+            "end": "2026-02-01T10:00:00",
+            "bucket": "hour"
+          }
+        ]
+      ],
+      "claude_interpretation": "`observed_throughput` (machine MCC777eda3db57348ef8a3113a642ae74db, 2026-02-01T06:00:00 -> 2026-02-01T10:00:00, per hour)",
+      "claude_clarification": "",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": false
+    },
+    {
+      "question": "success rate hour by hour on Feb 2 from noon to 4pm",
+      "expected": [
+        [
+          "kpi_over_time",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "bucket": "hour",
+            "start": "2026-02-02T12:00:00",
+            "end": "2026-02-02T16:00:00"
+          }
+        ]
+      ],
+      "claude_calls": [
+        [
+          "kpi_over_time",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "start": "2026-02-02T12:00:00",
+            "end": "2026-02-02T16:00:00",
+            "bucket": "hour"
+          }
+        ]
+      ],
+      "claude_interpretation": "`kpi_over_time` (machine MCC777eda3db57348ef8a3113a642ae74db, 2026-02-02T12:00:00 -> 2026-02-02T16:00:00, per hour)",
+      "claude_clarification": "",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": false
+    },
+    {
+      "question": "was the machine standing still at any point on the afternoon of Feb 1?",
+      "expected": [
+        [
+          "machine_idle",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "start": "2026-02-01T12:00:00",
+            "end": "2026-02-01T18:00:00"
+          }
+        ]
+      ],
+      "claude_calls": [
+        [
+          "machine_idle",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "start": "2026-02-01T12:00:00",
+            "end": "2026-02-01T18:00:00"
+          }
+        ]
+      ],
+      "claude_interpretation": "`machine_idle` (machine MCC777eda3db57348ef8a3113a642ae74db, 2026-02-01T12:00:00 -> 2026-02-01T18:00:00)",
+      "claude_clarification": "",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": false
+    },
+    {
+      "question": "is something off with spindle 4 on Feb 1 between 9 and 10?",
+      "expected": [
+        [
+          "compare_head_success",
+          {
+            "head_id": "H04",
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "start": "2026-02-01T09:00:00",
+            "end": "2026-02-01T10:00:00"
+          }
+        ],
+        [
+          "detect_torque_anomalies",
+          {
+            "head_id": "H04",
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "start": "2026-02-01T09:00:00",
+            "end": "2026-02-01T10:00:00"
+          }
+        ]
+      ],
+      "claude_calls": [
+        [
+          "compare_head_success",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "head_id": "H04",
+            "start": "2026-02-01T09:00:00",
+            "end": "2026-02-01T10:00:00"
+          }
+        ],
+        [
+          "detect_torque_anomalies",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "head_id": "H04",
+            "start": "2026-02-01T09:00:00",
+            "end": "2026-02-01T10:00:00"
+          }
+        ]
+      ],
+      "claude_interpretation": "`compare_head_success` (head H04, machine MCC777eda3db57348ef8a3113a642ae74db, 2026-02-01T09:00:00 -> 2026-02-01T10:00:00); `detect_torque_anomalies` (head H04, machine MCC777eda3db57348ef8a3113a642ae74db, 2026-02-01T09:00:00 -> 2026-02-01T10:00:00)",
+      "claude_clarification": "",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": false
+    },
+    {
+      "question": "average torque of the good closures on head 6, Feb 3 morning",
+      "expected": [
+        [
+          "torque_stats",
+          {
+            "head_id": "H06",
+            "status_filter": "successful",
+            "start": "2026-02-03T06:00:00",
+            "end": "2026-02-03T12:00:00"
+          }
+        ]
+      ],
+      "claude_calls": [
+        [
+          "torque_stats",
+          {
+            "machine_id": "MCC777eda3db57348ef8a3113a642ae74db",
+            "head_id": "H06",
+            "start": "2026-02-03T06:00:00",
+            "end": "2026-02-03T12:00:00",
+            "status_filter": "successful"
+          }
+        ]
+      ],
+      "claude_interpretation": "`torque_stats` (head H06, machine MCC777eda3db57348ef8a3113a642ae74db, 2026-02-03T06:00:00 -> 2026-02-03T12:00:00, successful closures only)",
+      "claude_clarification": "",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": false
+    },
+    {
+      "question": "is head 4 ok?",
+      "expected": null,
+      "claude_calls": [],
+      "claude_interpretation": "",
+      "claude_clarification": "To check head 4, I need a time window, because the head comparison only works over a set period. What period should I use? For example, a single day such as 2026-02-02, or all the available data from 2026-01-31 16:00 to 2026-02-03 16:00.",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": true
+    },
+    {
+      "question": "what's the weather in Turin?",
+      "expected": null,
+      "claude_calls": [],
+      "claude_interpretation": "",
+      "claude_clarification": "I can't check the weather. I can only analyse capping-machine data, like torque, success rates, throughput and idle time. What would you like to know about machine MCC777eda3db57348ef8a3113a642ae74db between 31 January and 3 February 2026?",
+      "claude_correct": true,
+      "rules_calls": [],
+      "rules_correct": true
+    }
+  ]
+}

@@ -370,6 +370,10 @@ def assemble(query, plan, results, pool_meta, trace, *, min_n=30) -> str:
         f"*Query:* {query}",
         f"*Generated:* {now}  |  *Planner:* {trace.planner}  |  "
         f"*Schema:* {pool_meta.get('schema_version', '?')}",
+    ]
+    if getattr(plan, "interpretation", ""):
+        out.append(f"*Interpreted as:* {plan.interpretation}")
+    out += [
         "",
         "## 1. Goal",
         "",

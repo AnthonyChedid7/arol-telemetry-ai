@@ -1,10 +1,12 @@
 """Planners: decide which tools to call, with which parameters.
 
-Three planner modes behind one interface:
+Four planner modes behind one interface:
 
   RulePlanner  deterministic keyword routing. No network, no API key, no model.
   LLMPlanner   strict single-torque verification for an experimental model path.
   HeadDiagnosticPlanner  scoped head checks from registered tool evidence.
+  ClaudePlanner  everyday wording -> any registered tool via the Anthropic API
+                 (claude_planner.py); validated, with rules as the fallback.
 
 The rule planner is built first on purpose. It proves the whole dispatch and
 report path end to end without a model in the way, it is the determinism
@@ -32,6 +34,7 @@ class Plan:
     ambiguous: bool = False
     clarification: str = ""
     rationale: str = ""
+    interpretation: str = ""
 
 
 class Planner:
@@ -249,4 +252,7 @@ def get_planner(cfg) -> Planner:
         return HeadDiagnosticPlanner()
     if kind == "llm":
         return LLMPlanner(cfg)
-    raise ValueError(f"agent.planner must be 'rules', 'diagnostic' or 'llm', got {kind!r}")
+    if kind == "claude":
+        from .claude_planner import ClaudePlanner
+        return ClaudePlanner(cfg)
+    raise ValueError(f"agent.planner must be 'rules', 'diagnostic', 'llm' or 'claude', got {kind!r}")

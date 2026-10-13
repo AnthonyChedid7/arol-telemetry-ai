@@ -41,8 +41,30 @@ except ValueError as exc:
 
 machine = manifest["summary"]["machine_id"]
 st.caption(f"Selected machine: {machine} | Head diagnostic and scoped analytics (registered tools)")
-st.info("For a head diagnostic, give a bounded time window in your question. "
-        "The selected machine above will be used if you do not name one.")
+
+# Claude understands everyday wording; the rules need the documented phrasing.
+PLANNERS = {
+    "Claude (understands everyday wording)": "claude",
+    "Rules only (offline, exact phrasing)": "diagnostic",
+}
+default_planner = os.environ.get("AROL_PLANNER") or (
+    "claude" if os.environ.get("ANTHROPIC_API_KEY") else "diagnostic")
+planner_labels = list(PLANNERS)
+planner_label = st.sidebar.radio(
+    "Question understanding", planner_labels,
+    index=next((i for i, label in enumerate(planner_labels)
+                if PLANNERS[label] == default_planner), 1),
+)
+planner_kind = PLANNERS[planner_label]
+if planner_kind == "claude":
+    st.sidebar.caption("Your question text is sent to the Anthropic API to choose the "
+                       "analysis. Telemetry data stays on this computer. Without a key "
+                       "or internet, the rules answer instead.")
+    st.info("Ask in your own words, for example: 'how hard were caps tightened on "
+            "spindle 5 in the first hour?'. Check the 'Interpreted as' line in the report.")
+else:
+    st.info("For a head diagnostic, give a bounded time window in your question. "
+            "The selected machine above will be used if you do not name one.")
 
 window = (
     f"for machine {machine} from 2026-02-01T00:00:00 "
@@ -94,7 +116,7 @@ if st.button("Analyze", type="primary"):
         cfg.setdefault("data", {}).update(
             source="person_a_pool", person_a={"demo": str(manifest_path)}
         )
-        cfg.setdefault("agent", {})["planner"] = "diagnostic"
+        cfg.setdefault("agent", {})["planner"] = planner_kind
 
         try:
             with st.spinner("Analyzing the selected event window..."):

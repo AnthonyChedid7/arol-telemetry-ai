@@ -47,7 +47,14 @@ class Orchestrator:
                     "trace": trace,
                 }
             pool = available[0]
-        plan = self.planner.plan(query, {"pool": pool, "selected_machine": selected_machine})
+        context = {"pool": pool, "selected_machine": selected_machine}
+        describe_pool = getattr(self.source, "describe_pool", None)
+        if callable(describe_pool):
+            try:
+                context["pool_summary"] = describe_pool(pool)
+            except Exception as exc:  # the summary is a planning hint, never evidence
+                trace.note(f"pool summary unavailable for planning ({type(exc).__name__})")
+        plan = self.planner.plan(query, context)
 
         # A planner that quietly fell back must say so: the report header
         # names the planner, and naming the one we asked for rather than the
@@ -64,6 +71,12 @@ class Orchestrator:
         trace.step("plan", goal=plan.goal, rationale=plan.rationale,
                    calls=[c[0] for c in plan.calls], filters=plan.filters,
                    ambiguous=plan.ambiguous)
+        if plan.interpretation:
+            trace.note(f"interpreted as: {plan.interpretation}")
+        usage = getattr(self.planner, "last_usage", None)
+        if usage:
+            trace.note("planner tokens: " + ", ".join(
+                f"{key}={value}" for key, value in usage.items() if value is not None))
 
         if plan.ambiguous:
             trace.note("stopped for clarification")

@@ -90,8 +90,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--manifest', help='Existing partitioned event-pool manifest; optional if exactly one exists')
     parser.add_argument('--question', action='append', help='Ask one question (repeat for multiple reports)')
     parser.add_argument('--examples', action='store_true', help='Print three scoped questions for this pool')
-    parser.add_argument('--planner', choices=('rules', 'diagnostic', 'llm'), default='rules',
-                        help='Rules by default; diagnostic explains scoped head evidence; llm is experimental single-torque planning')
+    parser.add_argument('--planner', choices=('rules', 'diagnostic', 'llm', 'claude'), default='rules',
+                        help='Rules by default; diagnostic explains scoped head evidence; llm is experimental '
+                             'single-torque planning; claude understands free-form questions (needs ANTHROPIC_API_KEY)')
     parser.add_argument('--json', action='store_true', help='Output one JSON object per question')
     parser.add_argument('--plots', action='store_true', help='Save PNG figures and embed links in reports where tool outputs permit')
     parser.add_argument('--output', type=Path, help='Parent directory for a new isolated report session')

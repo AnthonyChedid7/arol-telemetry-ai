@@ -101,3 +101,67 @@ def strict_calls(message, lookup):
     if name == "head_correlation" and args["head_a"] == args["head_b"]:
         raise ValueError("Head comparison requires distinct heads")
     return [(name, dict(args))]
+
+
+def _canonical_head(key, value):
+    if (not isinstance(value, str) or not value.startswith("H") or not value[1:].isdigit()
+            or int(value[1:]) < 1 or value != f"H{int(value[1:]):02d}"):
+        raise ValueError(f"{key} must be a canonical head identifier such as H05, got {value!r}")
+
+
+def validate_tool_call(name, args, lookup):
+    """Check one proposed call against any registered tool. Never repairs values.
+
+    The single exception is status_filter=None: the schema documents null as
+    "all statuses", which is exactly what omitting the argument means.
+    """
+    if not isinstance(name, str) or lookup(name) is None:
+        raise ValueError(f"Model selected an unregistered tool: {name!r}")
+    spec = lookup(name)
+    if not isinstance(args, dict) or any(not isinstance(key, str) for key in args):
+        raise ValueError("Tool arguments must be an object with string keys")
+    args = dict(args)
+    if "status_filter" in args and args["status_filter"] is None:
+        del args["status_filter"]
+    unknown = set(args) - set(spec.params)
+    if unknown:
+        raise ValueError(f"{name} does not accept: " + ", ".join(sorted(unknown)))
+    missing = set(spec.required) - set(args)
+    if missing:
+        raise ValueError(f"{name} requires: " + ", ".join(sorted(missing)))
+    bounds = {}
+    for key, value in args.items():
+        if key == "bins":
+            if type(value) is not int or value <= 0:
+                raise ValueError("bins must be a positive integer")
+        elif key == "status_filter":
+            if not ((type(value) is int) or value == "successful"):
+                raise ValueError("status_filter must be an integer status code or 'successful'")
+        elif key == "bucket":
+            if value not in ("hour", "day"):
+                raise ValueError("bucket must be 'hour' or 'day'")
+        elif key in {"head_a", "head_b"}:
+            _canonical_head(key, value)
+        elif key == "head_id":
+            heads = value if isinstance(value, list) else [value]
+            if not heads:
+                raise ValueError("head_id list must not be empty")
+            for head in heads:
+                _canonical_head(key, head)
+        elif key == "machine_id":
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError("machine_id must be a non-empty string")
+        elif key in {"start", "end"}:
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{key} must be an ISO timestamp string")
+            bound = datetime.fromisoformat(value)
+            if bound.tzinfo is not None:
+                raise ValueError("Timezone-aware bounds are not supported")
+            bounds[key] = bound
+        else:
+            raise ValueError(f"Argument has no verified validation rule: {key}")
+    if "start" in bounds and "end" in bounds and bounds["start"] >= bounds["end"]:
+        raise ValueError("start must be earlier than end")
+    if name == "head_correlation" and args["head_a"] == args["head_b"]:
+        raise ValueError("Head comparison requires distinct heads")
+    return name, args

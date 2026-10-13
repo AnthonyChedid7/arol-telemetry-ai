@@ -205,6 +205,25 @@ class EventPoolSource:
     def list_pools(self):
         return sorted(self.paths)
 
+    def describe_pool(self, pool):
+        """Machine and time range from the manifest only; no event data is read.
+
+        Used as planning context (resolving "the morning" to timestamps),
+        never as report evidence.
+        """
+        if pool not in self.paths:
+            raise KeyError(f"Unknown Person A event pool: {pool!r}")
+        manifest = json.loads(self.paths[pool].read_bytes())
+        partitions = manifest.get("partitions") or []
+        starts = [p["ts_min"] for p in partitions if p.get("ts_min")]
+        ends = [p["ts_max"] for p in partitions if p.get("ts_max")]
+        machine = (manifest.get("summary") or {}).get("machine_id")
+        return {
+            "machines": [machine] if machine else [],
+            "ts_min": min(starts) if starts else None,
+            "ts_max": max(ends) if ends else None,
+        }
+
     def load_for_plan(self, pool, calls):
         parsed = _read_plan(calls)
         population_call = next((item for item in parsed if item[0] == 'compare_head_success'), parsed[0])

@@ -1,6 +1,6 @@
 # AROL Telemetry AI
 
-An industrial telemetry analysis project for an AROL capping machine. It converts timestamped, per-head counter readings into **observed closure events**, lets a scoped question select registered analyses, and produces a Markdown report with a JSON execution trace. The normal demo uses deterministic question routing; a local Ollama planner is available for a narrower set of torque questions.
+An industrial telemetry analysis project for an AROL capping machine. It converts timestamped, per-head counter readings into **observed closure events**, lets a scoped question select registered analyses, and produces a Markdown report with a JSON execution trace. The normal demo uses deterministic question routing; a local Ollama planner is available for a narrower set of torque questions, and a [Claude planner](#claude-planner-everyday-wording) understands everyday wording across all tools.
 
 > **Scope of the numbers:** An event represents an observed counter change of exactly `+1` between successive readings. Larger jumps and decreases are measured but are not reconstructed into individual closures. Results therefore describe **observed events**, not all physical production.
 
@@ -13,6 +13,7 @@ An industrial telemetry analysis project for an AROL capping machine. It convert
 - [Architecture](#architecture)
 - [Analysis tools](#analysis-tools)
 - [Optional local LLM](#optional-local-llm)
+- [Claude planner (everyday wording)](#claude-planner-everyday-wording)
 - [Data definitions and limits](#data-definitions-and-limits)
 - [Project layout and further reading](#project-layout-and-further-reading)
 - [Troubleshooting](#troubleshooting)
@@ -196,6 +197,29 @@ Then check that Ollama is running and the chosen tag appears in `ollama list`, a
 ```
 
 **Important:** `config.local.yaml` is not listed in the current `.gitignore`; keep local machine settings and any secrets out of commits. No API key is required for localhost Ollama. `--planner llm` is an **experimental torque planner** restricted to five verified single-tool torque analyses. Its existing scope validator rejects changed arguments, combined analyses, KPI questions, and head-health questions before data access. Transport fallback to rules, when enabled, is labelled in the trace. The website's head diagnostic is a separate evidence-based route and does not use this LLM mode.
+
+## Claude planner (everyday wording)
+
+The rules only recognise the documented phrasings. `--planner claude` sends the question to the Anthropic API, where Claude chooses among **all twelve registered tools** and their arguments. "How hard did spindle 5 tighten caps this morning?" becomes `torque_stats` for `H05`, 06:00–12:00, without the exact vocabulary.
+
+What stays the same:
+
+- Tools compute every number. Claude's text is used only as a clarification question, never as a finding.
+- Every proposal is validated before data is loaded: the tool must be registered, the argument names must be known, heads must be canonical (`H05`), timestamps naive with start before end, and the tool combination must be supported. Invalid proposals are rejected, never repaired.
+- Each report has an **`Interpreted as:`** line, so you can check what Claude understood.
+- Only the question text, the tool descriptions and the pool's machine/time range are sent to Anthropic. Telemetry rows and results stay local.
+- If no key is configured or the API is unreachable, the deterministic rules answer instead. The trace shows `claude->rules (fallback)`.
+
+Setup: put your key in the `ANTHROPIC_API_KEY` environment variable. Never put it in `config.yaml` or a committed file. On Windows: *Edit environment variables for your account* → *New*, then open a new terminal. Settings live in `config.yaml` under `agent.claude` (model `claude-opus-5-5`, `effort: low`, `fallback_to_rules: true`).
+
+```bash
+python -m scripts.demo_agent --planner claude \
+  --question "which spindle had the worst success rate on the first morning?"
+```
+
+The website has a *Question understanding* switch in the sidebar. Claude is the default when `ANTHROPIC_API_KEY` is set; `AROL_PLANNER=diagnostic` forces the rules.
+
+Evidence: `python -m scripts.verify_claude_paraphrases` asks 16 everyday-language questions to both planners (planning only, no data loaded). On a Feb 1–3 pool, Claude chose the expected tools and scope for 16/16 and the rules for 2/16 (the two questions that need a clarification). Total cost was about $0.08; see `benchmarks/integration/claude_paraphrases_*.json`. The system prompt and tool list are cached, so one question costs about half a cent.
 
 ## Data definitions and limits
 
