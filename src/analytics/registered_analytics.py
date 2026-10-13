@@ -19,6 +19,7 @@ SCOPE = ["start", "end", "head_id", "machine_id", "status_filter"]
 # Same value as config.yaml analytics.drift_threshold_nm_per_hour; used only
 # when a configuration omits the key.
 DEFAULT_DRIFT_NM_PER_HOUR = 0.05
+DEFAULT_TREND_MAX_POINTS = 2000  # config.yaml analytics.trend_max_points
 OBSERVED_NOTE = (
     "Only supplied observed exact +1 events are analysed. "
     "Counter discontinuities are not reconstructed. "
@@ -78,7 +79,16 @@ def registered_trend(events, *, status_filter=None,
     result["drift_slope_nm_per_hour"] = None if slope is None else slope * 3600
     result["drift_detected"], result["drift_direction"] = _classify_drift(
         slope, threshold_per_second=per_hour / 3600)
-    return _finish(
+    # The slope and drift above use every point. Only the returned series is
+    # thinned: a one-day trend was ~41 MB of JSON (brief: scale with volume).
+    max_points = (config.get("analytics") or {}).get("trend_max_points", DEFAULT_TREND_MAX_POINTS)
+    if type(max_points) is not int or max_points < 2:
+        raise ValueError("analytics.trend_max_points must be an integer of at least 2")
+    total = len(result["timestamps"])
+    result["timestamps"], result["moving_average"] = _thin_series(
+        result["timestamps"], result["moving_average"], max_points)
+    thinned = len(result["timestamps"]) < total
+    response = _finish(
         result, scoped, population, inner, label, applied,
         units={"moving_average": "Nm", "drift_slope_per_second": "Nm/s",
                "drift_slope_nm_per_hour": "Nm/h", "drift_threshold_nm_per_hour": "Nm/h",
@@ -88,8 +98,36 @@ def registered_trend(events, *, status_filter=None,
                f"exceeds {per_hour:g} Nm per hour (configured practical threshold, not yet "
                "validated with AROL, and not a statistical significance test). "
                "Selected observations are pooled; this is not a separate trend per head. "
-               "The requested scope supplies all available history for this calculation."),
+               "The requested scope supplies all available history for this calculation."
+               + (f" The returned moving-average series is thinned to {len(result['timestamps']):,} "
+                  f"of {total:,} points, evenly over time with first and last kept; the slope "
+                  "and drift use every point." if thinned else "")),
     )
+    response["meta"]["series_points"] = {"returned": len(result["timestamps"]), "total": total}
+    return response
+
+
+def _thin_series(timestamps, values, max_points):
+    """Keep at most max_points, one per equal time slice, plus first and last."""
+    if len(timestamps) <= max_points:
+        return timestamps, values
+    from datetime import datetime
+    times = [datetime.fromisoformat(t) for t in timestamps]
+    first, span = times[0], (times[-1] - times[0]).total_seconds()
+    if span <= 0:
+        step = (len(times) - 1) / (max_points - 1)
+        keep = sorted({round(i * step) for i in range(max_points)})
+    else:
+        slices = max_points - 1
+        seen, keep = set(), []
+        for index, moment in enumerate(times):
+            slot = min(slices - 1, int((moment - first).total_seconds() / span * slices))
+            if slot not in seen:  # first point of each time slice
+                seen.add(slot)
+                keep.append(index)
+        if keep[-1] != len(times) - 1:
+            keep.append(len(times) - 1)
+    return [timestamps[i] for i in keep], [values[i] for i in keep]
 
 
 @tool(name="detect_torque_anomalies", description=(

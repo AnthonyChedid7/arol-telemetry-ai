@@ -29,6 +29,9 @@ analytics:
   # Drift is reported only above this rate of change of the moving average.
   # Practical value pending AROL validation (expected range is 1.5-2.5 Nm).
   drift_threshold_nm_per_hour: 0.05
+  # The returned trend series is thinned to at most this many points (the slope
+  # and drift always use every point).
+  trend_max_points: 2000
   # Events whose status contradicts torque at this boundary are flagged.
   status_torque_mismatch_nm: 0.5
   # Groups with fewer events are reported as below the minimum sample size.
