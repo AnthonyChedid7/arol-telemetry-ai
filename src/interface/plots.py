@@ -51,7 +51,7 @@ def _histogram(data, meta, target):
         for ax, panel_edges, panel_counts, title in panels:
             ax.bar(panel_edges[:-1], panel_counts,
                    width=[b - a for a, b in zip(panel_edges, panel_edges[1:])],
-                   align="edge", edgecolor="white", color="#29627f")
+                   align="edge", edgecolor="white", color="#16365C")
             ax.set_title(title, loc="left", fontsize=10)
             ax.set_xlabel("Closure torque (Nm)")
             ax.set_ylabel(_population(meta))
@@ -66,7 +66,7 @@ def _histogram(data, meta, target):
         return target
     fig, ax = plt.subplots(figsize=(9, 4.5))
     ax.bar(edges[:-1], counts, width=[b - a for a, b in zip(edges, edges[1:])],
-           align="edge", edgecolor="white", color="#29627f")
+           align="edge", edgecolor="white", color="#16365C")
     ax.set_xlabel("Closure torque (Nm)")
     return _finish(ax, "Observed torque distribution", _population(meta), target)
 
@@ -80,7 +80,7 @@ def _trend(data, meta, target):
     # endpoints retained. The analytical result and report remain complete.
     step = max(1, (len(x) - 1) // 999)
     indices = sorted(set(range(0, len(x), step)) | {len(x) - 1})
-    ax.plot(_times([x[i] for i in indices]), [y[i] for i in indices], color="#29627f")
+    ax.plot(_times([x[i] for i in indices]), [y[i] for i in indices], color="#16365C")
     ax.set_xlabel(TIME_LABEL)
     return _finish(ax, "Trailing torque mean", "Torque (Nm)", target)
 
@@ -94,7 +94,7 @@ def _heads(data, meta, target):
     labels = [row["head_id"] for row in rows]
     values = [100 * row["success_rate_cap_present"] for row in rows]
     fig, ax = plt.subplots(figsize=(max(9, len(rows) * 0.27), 4.5))
-    ax.bar(labels, values, color="#29627f")
+    ax.bar(labels, values, color="#16365C")
     ax.tick_params(axis="x", labelrotation=90)
     ax.set_ylim(0, 100.5)
     ax.set_xlabel("Capping head")
@@ -108,7 +108,7 @@ def _time(data, meta, target):
     x = [item["bucket_start"] for item in buckets]
     y = [item["observed_events_per_hour"] for item in buckets]
     fig, ax = plt.subplots(figsize=(9, 4.5))
-    ax.plot(_times(x), y, marker="o", color="#29627f")
+    ax.plot(_times(x), y, marker="o", color="#16365C")
     # A one-bucket result has only one x coordinate. Matplotlib otherwise
     # invents a multi-year date range around that point.
     window = data.get("requested_window") or {}
@@ -128,7 +128,7 @@ def _idle(data, meta, target):
     # Bars span each interval on a real time axis (widths are in days).
     ax.bar(_times([p["start"] for p in periods]), [p["duration_seconds"] for p in periods],
            width=[p["duration_seconds"] / 86400 for p in periods], align="edge",
-           color="#ad7631")
+           color="#F28C28")
     ax.set_xlabel("Interval start (UTC)")
     ax.tick_params(axis="x", labelrotation=35)
     return _finish(ax, "All-head No Load intervals", "Observed seconds", target)

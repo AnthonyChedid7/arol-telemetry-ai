@@ -195,6 +195,10 @@ class ClaudePlanner(Planner):
         self.max_retries = int(settings.get("max_retries", 1))
         self.max_question_chars = int(settings.get("max_question_chars", 1000))
         self.fallback = bool(settings.get("fallback_to_rules", True))
+        # A key a website visitor typed for this session only (never read from
+        # files: config.load refuses keys in config). Otherwise the SDK uses
+        # ANTHROPIC_API_KEY from the environment or the project's .env file.
+        self._session_api_key = settings.get("session_api_key") or None
         self._client = client
         self.last_error: str | None = None
         self.validation_error: str | None = None
@@ -207,8 +211,10 @@ class ClaudePlanner(Planner):
         if self._client is None:
             import anthropic
             # Bounded so an outage reaches the rules fallback in about a minute.
-            self._client = anthropic.Anthropic(timeout=self.timeout,
-                                               max_retries=self.max_retries)
+            options = dict(timeout=self.timeout, max_retries=self.max_retries)
+            if self._session_api_key:
+                options["api_key"] = self._session_api_key
+            self._client = anthropic.Anthropic(**options)
         return self._client
 
     def _call(self, question: str, context: dict, tools: list[dict]):

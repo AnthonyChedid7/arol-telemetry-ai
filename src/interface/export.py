@@ -17,18 +17,24 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from . import brand
+
 CSS = """
-:root { --ink:#141C24; --muted:#66757F; --rule:#D8E0E7; --accent:#1F5C8B;
-        --ok:#2F7D4F; --warn:#8A6D1F; --bad:#A63A2E; --surface:#fff; }
+:root { --ink:#1B2430; --muted:#5F6B7A; --rule:#DDE3EA; --accent:#0C2340;
+        --ok:#2E8B57; --warn:#D68910; --bad:#C0392B; --surface:#fff; --orange:#F28C28; }
 * { box-sizing:border-box; }
-body { background:#F4F6F8; color:var(--ink); margin:0; padding:32px 20px 64px;
-       font:15px/1.6 "IBM Plex Sans",-apple-system,Segoe UI,Roboto,sans-serif; }
-main { max-width:900px; margin:0 auto; background:var(--surface);
-       padding:40px 48px; border:1px solid var(--rule); border-radius:4px; }
-h1 { font-size:1.9rem; margin:0 0 4px; letter-spacing:-.01em; }
-h2 { font-size:1.15rem; margin:34px 0 12px; padding-top:14px;
-     border-top:1px solid var(--rule); }
-h2:first-of-type { border-top:none; }
+body { background:#F4F6F9; color:var(--ink); margin:0; padding:28px 20px 64px;
+       font:15px/1.6 "Segoe UI",-apple-system,Roboto,Helvetica,Arial,sans-serif; }
+.page { max-width:960px; margin:0 auto; }
+main { background:var(--surface); padding:36px 44px; border:1px solid var(--rule);
+       border-radius:10px; }
+h1 { font-size:1.7rem; margin:0 0 4px; letter-spacing:-.01em; color:var(--accent); }
+h2 { font-size:1.12rem; margin:30px 0 12px; padding:6px 0 6px 12px; color:var(--accent);
+     background:#F4F6F9; border-radius:6px; }
+h3 { color:var(--accent); }
+blockquote { margin:12px 0; padding:10px 14px; background:#FFF4E8;
+             border:1px solid #F7C99A; border-radius:8px; }
+.footer { color:var(--muted); font-size:.75rem; text-align:center; margin-top:18px; }""" + brand.HEADER_CSS + """
 p, li { margin:0 0 9px; }
 ul { padding-left:22px; }
 ul ul { margin-top:6px; }
@@ -131,30 +137,49 @@ def markdown_to_html_body(markdown: str) -> str:
     return "\n".join(out)
 
 
-def to_html(markdown: str, *, figures=None, title="Telemetry report") -> str:
+def _image_src(path, embed):
+    if not embed:
+        return Path(path).name
+    import base64
+    return "data:image/png;base64," + base64.b64encode(Path(path).read_bytes()).decode("ascii")
+
+
+def to_html(markdown: str, *, figures=None, title="Telemetry report",
+            key_figures=None, embed=False) -> str:
+    """Branded HTML report. embed=True puts the figures inside the file, so a
+    single download can be emailed or printed; otherwise they are linked."""
     body = markdown_to_html_body(markdown)
     if figures:
         blocks = "\n".join(
-            f'<figure><img src="{Path(p).name}" alt="{name}">'
-            f'<figcaption>{name}</figcaption></figure>'
+            f'<figure><img src="{_image_src(p, embed)}" alt="{name}">'
+            f'<figcaption>{name.replace("_", " ")}</figcaption></figure>'
             for name, p in figures
         )
         # Figures belong with the findings they illustrate.
         marker = "<h2>5. Confidence and limits</h2>"
         body = (body.replace(marker, f"{blocks}\n{marker}", 1)
                 if marker in body else body + blocks)
+    if key_figures:
+        # The headline numbers sit under the report title, before section 1.
+        cards = brand.kpi_cards_html(key_figures)
+        body = body.replace("<h2>", cards + "<h2>", 1) if "<h2>" in body else cards + body
+    header = brand.header_html(brand.PRODUCT, "Telemetry report")
     return (f"<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
             f"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
             f"<title>{html_mod.escape(title)}</title><style>{CSS}</style></head>"
-            f"<body><main>{body}</main></body></html>")
+            f"<body><div class=\"page\">{header}<main>{body}</main>"
+            f"<div class=\"footer\">{brand.DISCLAIMER}. Numbers are computed by deterministic tools "
+            f"from recorded telemetry; see the limits section.</div></div></body></html>")
 
 
-def save_html(markdown: str, out_dir, *, figures=None, stem=None) -> Path:
+def save_html(markdown: str, out_dir, *, figures=None, stem=None,
+              key_figures=None, embed=False) -> Path:
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = stem or f"report-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     path = out_dir / f"{stem}.html"
-    path.write_text(to_html(markdown, figures=figures), encoding="utf-8")
+    path.write_text(to_html(markdown, figures=figures, key_figures=key_figures, embed=embed),
+                    encoding="utf-8")
     return path
 
 

@@ -11,6 +11,10 @@ _CREDENTIALS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE"
 
 
 @pytest.fixture(autouse=True)
-def _no_live_model_requests(monkeypatch):
+def _no_live_model_requests(monkeypatch, tmp_path):
     for name in _CREDENTIALS:
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.delenv("AROL_DEMO", raising=False)
+    # A developer's own .env must not leak a key (or a demo switch) into tests.
+    from src.common import config
+    monkeypatch.setattr(config, "DOTENV", tmp_path / "no.env")

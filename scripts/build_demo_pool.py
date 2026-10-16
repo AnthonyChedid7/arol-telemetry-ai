@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timedelta
+import os
 from pathlib import Path
 import shutil
+import stat
 
 import numpy as np
 import polars as pl
@@ -40,8 +42,8 @@ def _telemetry(seconds: int = 86_400, seed: int = SEED) -> pl.DataFrame:
     rng = np.random.default_rng(seed)
     t = np.arange(seconds)
     hour = t / 3600.0
-    # The rotary machine closes on every head roughly every 3.24 s, almost in
-    # step; odd heads lag one second.
+    # The rotary machine closes on every head roughly every 3.24 s, in step:
+    # like the real files, all heads increment in the same second.
     period = np.where(rng.random(seconds) < 0.76, 3, 4)
     ticks = np.cumsum(period)
     ticks = ticks[ticks < seconds - 1]
@@ -49,7 +51,7 @@ def _telemetry(seconds: int = 86_400, seed: int = SEED) -> pl.DataFrame:
     columns = {"timestamp": [DAY + timedelta(seconds=int(s)) for s in t]}
     counts, torques, statuses = {}, {}, {}
     for index, head in enumerate(HEADS):
-        cycle_rows = ticks + (index % 2)
+        cycle_rows = ticks
         n = len(cycle_rows)
         cycle_hour = hour[cycle_rows]
         no_load = (rng.random(n) < 0.40) | idle[cycle_rows]
@@ -100,7 +102,15 @@ def build(target: Path | None = None, *, seconds: int = 86_400, rebuild: bool = 
     if manifest.is_file() and not rebuild:
         return manifest
     if target.exists():
-        shutil.rmtree(target)
+        def _writable_retry(function, path, _):
+            # Windows can mark folders read-only, which blocks deletion.
+            os.chmod(path, stat.S_IWRITE)
+            function(path)
+        try:
+            shutil.rmtree(target, onexc=_writable_retry)
+        except PermissionError as exc:
+            raise SystemExit(f"Cannot rebuild {target}: a running website or analysis has its "
+                             "files open. Close it and try again.") from exc
     raw_dir = target / "raw"
     raw_dir.mkdir(parents=True)
     frame = _telemetry(seconds)

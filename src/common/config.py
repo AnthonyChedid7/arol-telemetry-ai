@@ -31,14 +31,57 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return out
 
 
+DOTENV = REPO_ROOT / ".env"
+# Only these settings are read from .env, so it cannot change anything else.
+_DOTENV_KEYS = ("ANTHROPIC_API_KEY", "AROL_MANIFEST", "AROL_PLANNER", "AROL_DEMO")
+
+
+def load_dotenv(path: str | Path | None = None) -> list[str]:
+    """Copy allowed KEY=value lines from the project's .env into os.environ.
+
+    Lets anyone keep their own Anthropic key in one ignored file instead of a
+    system-wide variable. Values already set in the environment win. Returns
+    the names that were set; values are never printed or logged.
+    """
+    import os
+
+    path = Path(path) if path else DOTENV
+    if not path.is_file():
+        return []
+    applied = []
+    for raw in path.read_text(encoding="utf-8-sig").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = (part.strip() for part in line.split("=", 1))
+        if key.startswith("export "):
+            key = key[len("export "):].strip()
+        value = value.strip().strip('"').strip("'")
+        if key in _DOTENV_KEYS and value and not os.environ.get(key):
+            os.environ[key] = value
+            applied.append(key)
+    return applied
+
+
+def _refuse_keys_in_files(cfg: dict, source: Path) -> None:
+    claude = ((cfg.get("agent") or {}).get("claude") or {})
+    if any(name in claude for name in ("api_key", "session_api_key")):
+        raise ConfigError(f"{source.name} contains an API key. Never store keys in config files; "
+                          "use ANTHROPIC_API_KEY, the ignored .env file, or the website's key field.")
+
+
 def load(path: str | Path | None = None) -> dict:
     """Load config.yaml, merge config.local.yaml over it, resolve paths."""
+    load_dotenv()
     path = Path(path) if path else DEFAULT_CONFIG
     if not path.exists():
         raise ConfigError(f"no config at {path}")
     cfg = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    _refuse_keys_in_files(cfg, path)
     if LOCAL_CONFIG.exists() and path == DEFAULT_CONFIG:
-        cfg = _deep_merge(cfg, yaml.safe_load(LOCAL_CONFIG.read_text(encoding="utf-8")) or {})
+        local = yaml.safe_load(LOCAL_CONFIG.read_text(encoding="utf-8")) or {}
+        _refuse_keys_in_files(local, LOCAL_CONFIG)
+        cfg = _deep_merge(cfg, local)
 
     for section, key in (("data", "cache_dir"), ("agent", "report_dir"),
                          ("agent", "trace_dir")):

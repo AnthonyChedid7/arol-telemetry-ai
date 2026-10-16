@@ -1,0 +1,12 @@
+# Website theme (navy + signal orange). Streamlit reads this from the
+# repository root, locally and on Streamlit Community Cloud.
+[theme]
+base = "light"
+primaryColor = "#F28C28"
+backgroundColor = "#F4F6F9"
+secondaryBackgroundColor = "#E9EEF4"
+textColor = "#1B2430"
+font = "sans serif"
+
+[browser]
+gatherUsageStats = false

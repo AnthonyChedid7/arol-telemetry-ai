@@ -242,9 +242,11 @@ class Orchestrator:
 
         if "html" in wanted or "pdf" in wanted:
             from ..interface import export as export_mod
+            from ..interface.dashboard import key_figures
             html_path = export_mod.save_html(
                 answer["markdown"], report_dir / md_path.stem,
-                figures=figures, stem=md_path.stem)
+                figures=figures, stem=md_path.stem,
+                key_figures=key_figures(answer["results"]))
             paths["html"] = str(html_path)
             if "pdf" in wanted:
                 pdf = export_mod.save_pdf(html_path)

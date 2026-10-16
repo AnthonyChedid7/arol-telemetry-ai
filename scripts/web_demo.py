@@ -1,10 +1,20 @@
-"""Local browser UI for the integrated AROL demo. Run from the repo root."""
+"""Browser UI for the integrated AROL telemetry agent. Run from the repo root.
+
+    streamlit run app/streamlit_app.py      (or scripts/web_demo.py)
+
+Branded engineering dashboard: ask a question, see key figures, charts, the
+full traceable report, and download a styled HTML report. Works for anyone:
+without private telemetry it uses the synthetic demo pool, and Claude needs
+either ANTHROPIC_API_KEY (environment or .env) or a key typed into the sidebar
+for this browser session only.
+"""
 from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import re
 import sys
 from uuid import uuid4
 
@@ -17,18 +27,34 @@ if str(ROOT) not in sys.path:
 
 from scripts.demo_agent import answer_one, resolve_manifest  # noqa: E402
 from src.common import config as config_mod  # noqa: E402
+from src.interface import brand  # noqa: E402
+from src.interface.dashboard import key_figures  # noqa: E402
 
 DEFAULT_MANIFEST = (
     "data/event_pools/continuous-20260924-080513-930170/manifest.json"
 )
 
-st.set_page_config(page_title="AROL telemetry demo", layout="wide")
-st.title("AROL telemetry analysis")
-st.caption("Local, scoped analysis of observed capping-machine telemetry")
+config_mod.load_dotenv()  # a key or pool in the project's ignored .env file
+st.set_page_config(page_title="AROL Telemetry Analysis", layout="wide",
+                   page_icon=str(brand.LOGO) if brand.LOGO.is_file() else None)
+st.markdown(f"<style>{brand.HEADER_CSS}"
+            ".block-container{padding-top:1.4rem;max-width:1200px}"
+            "section[data-testid='stSidebar']{background:#0C2340}"
+            "section[data-testid='stSidebar'] h3,section[data-testid='stSidebar'] p,"
+            "section[data-testid='stSidebar'] label,section[data-testid='stSidebar'] small,"
+            "section[data-testid='stSidebar'] [data-testid='stCaptionContainer']{color:#E8EEF5}"
+            "section[data-testid='stSidebar'] code{color:#F28C28;background:rgba(255,255,255,.08)}"
+            "section[data-testid='stSidebar'] [data-testid='stAlert'] p{color:#1B2430}"
+            "</style>", unsafe_allow_html=True)
+st.markdown(brand.header_html(
+    "Telemetry Analysis Console",
+    "Ask about capping-machine telemetry and get a traceable engineering report"),
+    unsafe_allow_html=True)
 
 if Path.cwd().resolve() != ROOT:
     st.error(f"Start the app from the repository root: {ROOT}")
     st.stop()
+
 
 @st.cache_resource(show_spinner="Building the synthetic demo dataset (first start only)...")
 def _demo_manifest() -> str:
@@ -56,7 +82,61 @@ except ValueError as exc:
             "for the synthetic demo data, and restart.")
     st.stop()
 
-machine = manifest["summary"]["machine_id"]
+summary = manifest["summary"]
+machine = summary["machine_id"]
+
+# --- sidebar: data source, Claude key, planner --------------------------------
+with st.sidebar:
+    if brand.LOGO.is_file():
+        st.image(str(brand.LOGO), width=150)
+    st.markdown("### Data source")
+    st.markdown(
+        f"**{'Synthetic demo data' if demo_mode else 'Private event pool'}**  \n"
+        f"Machine `{machine}`  \n"
+        f"{summary.get('ts_min', '?')[:16]} to {summary.get('ts_max', '?')[:16]} UTC  \n"
+        f"{summary.get('observed_events', 0):,} observed events, {summary.get('heads', '?')} heads")
+    st.divider()
+    st.markdown("### Claude (optional)")
+    env_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    if env_key:
+        st.caption("Using the Anthropic key configured on this computer "
+                   "(environment variable or the project's .env file).")
+    else:
+        typed = st.text_input(
+            "Your Anthropic API key", type="password", key="session_api_key",
+            placeholder="sk-ant-...",
+            help="Lets Claude understand everyday wording. Kept only in this browser "
+                 "session: never saved, logged or written to reports.")
+        if typed and not typed.strip().startswith("sk-ant-"):
+            st.warning("That does not look like an Anthropic key (they start with 'sk-ant-').")
+        st.caption("No key? Everything works with the offline rules and the example "
+                   "questions. Keys: console.anthropic.com. You pay for your own "
+                   "questions (well under one cent each).")
+    session_key = (st.session_state.get("session_api_key") or "").strip()
+    key_available = env_key or session_key.startswith("sk-ant-")
+    st.divider()
+    PLANNERS = {
+        "Claude (understands everyday wording)": "claude",
+        "Rules only (offline, exact phrasing)": "diagnostic",
+    }
+    default_planner = os.environ.get("AROL_PLANNER") or ("claude" if key_available else "diagnostic")
+    planner_labels = list(PLANNERS)
+    planner_label = st.radio(
+        "Question understanding", planner_labels,
+        index=next((i for i, label in enumerate(planner_labels)
+                    if PLANNERS[label] == default_planner), 1),
+    )
+    planner_kind = PLANNERS[planner_label]
+    if planner_kind == "claude":
+        st.caption("Only the question text and the pool's machine/time range go to the "
+                   "Anthropic API. Telemetry stays where this page runs.")
+        if not key_available:
+            st.warning("No API key is available, so the rules will answer. "
+                       "Paste your own key above to use Claude.")
+    st.divider()
+    st.caption(brand.DISCLAIMER)
+
+# --- main: data banner and question ------------------------------------------
 if demo_mode:
     st.warning(
         "**Demo data.** This page is running on a synthetic, made-up dataset "
@@ -65,31 +145,9 @@ if demo_mode:
         "head 3 has three over-limit closures, and 01:00-01:30 the machine runs "
         "without caps. Try the examples below.")
 st.caption(f"Selected machine: {machine} | Head diagnostic and scoped analytics (registered tools)")
-
-# Claude understands everyday wording; the rules need the documented phrasing.
-PLANNERS = {
-    "Claude (understands everyday wording)": "claude",
-    "Rules only (offline, exact phrasing)": "diagnostic",
-}
-default_planner = os.environ.get("AROL_PLANNER") or (
-    "claude" if os.environ.get("ANTHROPIC_API_KEY") else "diagnostic")
-planner_labels = list(PLANNERS)
-planner_label = st.sidebar.radio(
-    "Question understanding", planner_labels,
-    index=next((i for i, label in enumerate(planner_labels)
-                if PLANNERS[label] == default_planner), 1),
-)
-planner_kind = PLANNERS[planner_label]
 if planner_kind == "claude":
-    st.sidebar.caption("Your question text is sent to the Anthropic API to choose the "
-                       "analysis. Telemetry data stays on this computer. Without a key "
-                       "or internet, the rules answer instead.")
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        st.sidebar.warning("No ANTHROPIC_API_KEY is set where this page runs, so the "
-                           "rules will answer. Run the project locally with your own "
-                           "key to use Claude.")
-    st.info("Ask in your own words, for example: 'how hard were caps tightened on "
-            "spindle 5 in the first hour?'. Check the 'Interpreted as' line in the report.")
+    st.info("Ask in your own words, for example: 'which head performs worst on Feb 1?' "
+            "or 'is spindle 12 drifting in the morning?'. Check the 'Interpreted as' line.")
 else:
     st.info("For a head diagnostic, give a bounded time window in your question. "
             "The selected machine above will be used if you do not name one.")
@@ -125,12 +183,13 @@ examples = {
         f"Machine idle for machine {machine} from 2026-02-01T00:00:00 until 2026-02-01T06:00:00"),
 }
 
+st.markdown("#### Ask a question")
 chosen = st.selectbox("Choose an example", list(examples))
 question = st.text_area(
     "Question",
     value=examples[chosen],
     key=f"question_{chosen}",
-    height=110,
+    height=100,
     placeholder="Ask for a machine, time window, head, and analysis.",
 )
 
@@ -163,6 +222,9 @@ if st.button("Analyze", type="primary"):
             source="person_a_pool", person_a={"demo": str(manifest_path)}
         )
         cfg.setdefault("agent", {})["planner"] = planner_kind
+        if planner_kind == "claude" and not env_key and session_key.startswith("sk-ant-"):
+            # In memory for this call only; config files can never hold a key.
+            cfg["agent"].setdefault("claude", {})["session_api_key"] = session_key
 
         try:
             with st.spinner("Analyzing the selected event window..."):
@@ -171,7 +233,8 @@ if st.button("Analyze", type="primary"):
                     json_output=True, plots=True, selected_machine=machine,
                 )
             payload = json.loads(response_json)
-            assert status == payload["status"]
+            if status != payload["status"]:
+                raise ValueError("Inconsistent analysis status")
             st.session_state["result"] = payload
             st.session_state["result_request"] = request_key
         except ValueError as exc:
@@ -184,10 +247,19 @@ if st.button("Analyze", type="primary"):
             # Keep errors visible during this local presentation demo.
             st.error(f"Analysis could not be completed: {type(exc).__name__}: {exc}")
 
+
+def _section(markdown, heading):
+    """Text of one '## heading' section of the report, without the heading."""
+    match = re.search(rf"^## {re.escape(heading)}\n(.*?)(?=^## |\Z)", markdown, re.S | re.M)
+    return match.group(1).strip() if match else ""
+
+
+# --- result -------------------------------------------------------------------
 payload = st.session_state.get("result")
 if payload is not None:
-    st.caption(f"Analysis route: {payload['planner']}")
     status = payload["status"]
+    st.markdown("#### Result")
+    st.caption(f"Analysis route: {payload['planner']}")
     if status == "ok":
         st.success("Analysis completed")
     elif status == "needs_clarification":
@@ -199,29 +271,62 @@ if payload is not None:
     # Streamlit displays their absolute local files below instead.
     saved_markdown = payload["markdown"]
     display_markdown = saved_markdown.split("\n## Figures\n", 1)[0]
-    st.markdown(display_markdown)
+    diagnostic, _, report = display_markdown.partition("# Telemetry report")
+    report = ("# Telemetry report" + report) if report else display_markdown
+    diagnostic = diagnostic.strip() if report is not display_markdown else ""
+    interpreted = re.search(r"\*Interpreted as:\*\s*(.+)", report)
+    if interpreted:
+        st.markdown(f"<div class='interp'><b>Interpreted as:</b> "
+                    f"{interpreted.group(1).replace('`', '')}</div>", unsafe_allow_html=True)
 
-    for index, name in enumerate(payload["artifacts"].get("figures", [])):
-        image_path = Path(name)
-        st.image(str(image_path), caption=image_path.stem.replace("_", " "))
-        st.download_button(
-            f"Download figure {index + 1}", image_path.read_bytes(),
-            file_name=image_path.name, mime="image/png", key=f"figure-{index}",
-        )
+    figures = key_figures(payload["results"])
+    if figures:
+        st.markdown(brand.kpi_cards_html(figures), unsafe_allow_html=True)
 
-    trace_json = json.dumps(payload["trace"], indent=2, ensure_ascii=False)
-    with st.expander("Execution trace and planned tools", expanded=True):
+    figure_paths = [Path(name) for name in payload["artifacts"].get("figures", [])]
+    tab_summary, tab_charts, tab_report, tab_trace, tab_downloads = st.tabs(
+        ["Summary", f"Charts ({len(figure_paths)})", "Full report", "Trace & data", "Downloads"])
+    with tab_summary:
+        if diagnostic:
+            st.markdown(diagnostic)
+        findings = _section(report, "4. Findings")
+        if findings:
+            st.markdown("#### Findings")
+            st.markdown(findings)
+        limits = _section(report, "5. Confidence and limits")
+        if limits:
+            with st.expander("Confidence and limits"):
+                st.markdown(limits)
+        if not (diagnostic or findings):
+            st.markdown(report)
+    with tab_charts:
+        if not figure_paths:
+            st.caption("This analysis has no chart.")
+        for image_path in figure_paths:
+            st.image(str(image_path), caption=image_path.stem.replace("_", " "))
+    with tab_report:
+        st.markdown(report)
+    with tab_trace:
         st.write("Planned calls:", payload["planned_calls"])
-        st.json(payload["trace"])
-    with st.expander("Tool results", expanded=True):
-        st.json(payload["results"])
-
-    st.download_button(
-        "Download Markdown report", saved_markdown,
-        file_name="arol-report.md", mime="text/markdown", key="report",
-    )
-    st.download_button(
-        "Download JSON trace", trace_json,
-        file_name="arol-trace.json", mime="application/json", key="trace",
-    )
-    st.caption("Report and trace are also saved locally under data/web_demo_runs/.")
+        with st.expander("Execution trace", expanded=False):
+            st.json(payload["trace"])
+        with st.expander("Tool results (raw)", expanded=False):
+            st.json(payload["results"])
+    with tab_downloads:
+        from src.interface.export import to_html
+        html_report = to_html(display_markdown, key_figures=figures, embed=True,
+                              figures=[(p.stem, p) for p in figure_paths],
+                              title=f"AROL telemetry report - {payload['query'][:60]}")
+        st.download_button("Download report (HTML, printable)", html_report,
+                           file_name="arol-report.html", mime="text/html",
+                           key="report-html", type="primary")
+        st.download_button("Download report (Markdown)", saved_markdown,
+                           file_name="arol-report.md", mime="text/markdown", key="report")
+        st.download_button("Download trace (JSON)",
+                           json.dumps(payload["trace"], indent=2, ensure_ascii=False),
+                           file_name="arol-trace.json", mime="application/json", key="trace")
+        for index, image_path in enumerate(figure_paths):
+            st.download_button(f"Download chart {index + 1} (PNG)", image_path.read_bytes(),
+                               file_name=image_path.name, mime="image/png", key=f"figure-{index}")
+        st.caption("Open the HTML report in a browser and print it to PDF if needed. "
+                   "Reports and traces are also saved under data/web_demo_runs/.")

@@ -121,8 +121,10 @@ def test_web_page_asks_for_window_then_shows_evidence(cfg, tmp_path, monkeypatch
         default_timeout=30,
     ).run()
     assert not app.exception
-    assert "Selected machine: M1" in app.caption[1].value
-    assert "Head diagnostic and scoped analytics" in app.caption[1].value
+    # Elements are found by content: the branded page adds a header before them.
+    data_caption = next(c.value for c in app.caption if "Selected machine" in c.value)
+    assert "Selected machine: M1" in data_caption
+    assert "Head diagnostic and scoped analytics" in data_caption
 
     app.session_state["output_dir"] = Path(tmp_path) / "web-runs"
     app.text_area[0].input(QUESTION).run()
@@ -135,11 +137,14 @@ def test_web_page_asks_for_window_then_shows_evidence(cfg, tmp_path, monkeypatch
     app.button[0].click().run()
     assert not app.exception
     assert app.success[0].value == "Analysis completed"
-    assert app.markdown[0].value.startswith("## Diagnostic answer")
-    assert "on closures excluding No Load cycles by default" in app.markdown[0].value
-    assert "across all observed statuses" not in app.markdown[0].value
+    # The branded page shows the diagnostic answer first in the Summary tab.
+    assert any(m.value.startswith("## Diagnostic answer") for m in app.markdown)
+    page = "\n".join(m.value for m in app.markdown)
+    assert "on closures excluding No Load cycles by default" in page
+    assert "across all observed statuses" not in page
     assert [item.label for item in app.expander] == [
-        "Execution trace and planned tools", "Tool results"]
+        "Confidence and limits", "Execution trace", "Tool results (raw)"]
+    assert [tab.label for tab in app.tabs][:1] == ["Summary"]
     assert app.session_state["result"]["trace"]["n_tool_calls"] == 2
 
     # An answer must disappear as soon as its question or planner changes.

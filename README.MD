@@ -59,7 +59,12 @@ ignored `data/demo_pool/`. It contains planted signals to find:
 | Head 3 has three 2.8 Nm closures (10:15, 14:30, 18:45) | `Find torque anomalies for head 3 for machine DEMO01 on 2026-02-01` |
 | 01:00-01:30 the machine runs without caps | `Machine idle for machine DEMO01 from 2026-02-01T00:00:00 until 2026-02-01T06:00:00` |
 
-After installing (see below):
+**Quickest start (anyone, no setup knowledge needed):** install Python 3.12 or
+newer, download or clone the repository, then double-click `start.bat`
+(Windows) or run `sh start.sh` (macOS/Linux). It creates `.venv`, installs the
+packages, creates a `.env` file and opens the website in your browser.
+
+Or manually, after installing (see below):
 
 ```bash
 .venv/bin/python -m scripts.demo_agent --demo --question "show me the failure rate for each head"
@@ -67,9 +72,45 @@ After installing (see below):
 ```
 
 The website uses the demo data automatically when no private pool exists (or
-when `AROL_DEMO=1`), and says so in a yellow banner. Without
-`ANTHROPIC_API_KEY` it answers with the offline rules (use the example
-questions); with a key, Claude understands everyday wording.
+when `AROL_DEMO=1`), and says so in a yellow banner. Without an Anthropic key it
+answers with the offline rules (use the example questions); with a key, Claude
+understands everyday wording.
+
+### Using Claude: everyone uses their own key
+
+Nobody needs the team's key, and no key is ever stored in the repository. Each
+tester uses their own key from https://console.anthropic.com, in any of these ways:
+
+| Where | How | Kept |
+| --- | --- | --- |
+| Website sidebar | Paste it into *Your Anthropic API key* | Only for that browser session; never saved or logged |
+| `.env` file | `ANTHROPIC_API_KEY=sk-ant-...` (copy `.env.example` to `.env`) | On your computer only; `.env` is ignored by Git |
+| Environment | Set `ANTHROPIC_API_KEY` | On your computer only |
+
+`config.yaml` and `config.local.yaml` refuse any key (the app stops with an
+error), so one cannot be committed by accident. Each question costs the key's
+owner well under one cent; the tests never use a key.
+
+### Power test (accuracy, scale, robustness)
+
+`scripts/showcase.py` asks the system a battery of questions and checks every
+number against an **independent calculation made directly from the Parquet
+files with plain Polars** (not the project's tools):
+
+```bash
+.venv/bin/python -m scripts.showcase                    # demo data; Claude too if a key is set
+.venv/bin/python -m scripts.showcase --manifest data/event_pools/<pool>/manifest.json --scale <manifest> <manifest>
+```
+
+It writes a branded scorecard (`data/showcase/<stamp>/scorecard.html`). The
+recorded run in `docs/showcase/scorecard.html` (real February telemetry plus the
+demo data, Claude and the rules) gave:
+
+| Check | Result |
+| --- | --- |
+| Accuracy: 12 analyses x 2 datasets x 2 planners | **48/48** right analysis with exactly matching numbers |
+| Robustness: typos, Italian, vague dates, impossible heads, prompt injection, off-topic | **12/12** answered correctly or asked; nothing invented |
+| Scale: whole-pool totals | 0.8 M events in 0.4-0.7 s; 2.3 M in 0.4-1.0 s; **21.9 M events (28 days) in 3.4-12.5 s** |
 
 ### Put the website online (free)
 
