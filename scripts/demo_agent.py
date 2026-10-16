@@ -88,6 +88,8 @@ def answer_one(question: str, cfg: dict, output: Path, sequence: int,
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--manifest', help='Existing partitioned event-pool manifest; optional if exactly one exists')
+    parser.add_argument('--demo', action='store_true',
+                        help='Use the synthetic demo pool (built on first use); no private data needed')
     parser.add_argument('--question', action='append', help='Ask one question (repeat for multiple reports)')
     parser.add_argument('--examples', action='store_true', help='Print three scoped questions for this pool')
     parser.add_argument('--planner', choices=('rules', 'diagnostic', 'llm', 'claude'), default='rules',
@@ -101,10 +103,15 @@ def main(argv: list[str] | None = None) -> int:
         parser.error('Run from the repository root.')
     if args.json and not args.question and not args.examples:
         parser.error('--json requires at least one --question')
+    if args.demo and args.manifest:
+        parser.error('Use either --demo or --manifest, not both')
+    if args.demo:
+        from scripts.build_demo_pool import build
+        args.manifest = str(build())
     try:
         path, record = resolve_manifest(args.manifest)
     except ValueError as exc:
-        parser.error(str(exc))
+        parser.error(f'{exc} (or pass --demo to use the synthetic demo data)')
     if args.examples:
         try:
             for item in examples(record):

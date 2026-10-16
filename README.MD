@@ -7,6 +7,7 @@ An industrial telemetry analysis project for an AROL capping machine. It convert
 ## Contents
 
 - [Requirements and installation](#requirements-and-installation)
+- [Try it yourself: demo data](#try-it-yourself-demo-data)
 - [Run without private telemetry](#run-without-private-telemetry)
 - [Prepare a real event pool](#prepare-a-real-event-pool)
 - [Ask questions and inspect results](#ask-questions-and-inspect-results)
@@ -41,6 +42,51 @@ python3.12 -m venv .venv
 Run commands from the **repository root**. Runtime packages are pinned in `requirements.txt` (Polars and Parquet for processing, PyYAML for configuration, the Anthropic SDK for the optional Claude planner); `requirements-dev.txt` adds pytest and `requirements-web.txt` adds Streamlit. Without Streamlit the one website test is skipped. Tests never contact a model API, even when a key is set. Running `pytest tests -q` selects the actual suite and avoids accidentally collecting backed-up test files stored elsewhere in a local working directory.
 
 On Windows, substitute `.venv\Scripts\python` for `.venv/bin/python` in the commands below. If `python3.12` is unavailable, install Python 3.12 first and check `python3.12 --version`.
+
+## Try it yourself: demo data
+
+The AROL telemetry is private and is not in this repository, so anyone else
+needs data to try the app. `scripts/build_demo_pool.py` generates one made-up
+day for machine `DEMO01` (36 heads, one reading per second, 960,840 observed
+events, UTC) in the same CSV format and runs it through the normal pool
+builder. It is deterministic, takes a few seconds, and is written to the
+ignored `data/demo_pool/`. It contains planted signals to find:
+
+| Planted signal | Ask (example in the website list) |
+| --- | --- |
+| Head 7 is weak (about 3% rejects, 97.0% success) | `Rank heads by cap-present success rate for machine DEMO01 on 2026-02-01` |
+| Head 12 torque drifts up about 0.1 Nm/h, 08:00-12:00 | `Show torque trend for head 12 for machine DEMO01 from 2026-02-01T06:00:00 until 2026-02-01T12:00:00` |
+| Head 3 has three 2.8 Nm closures (10:15, 14:30, 18:45) | `Find torque anomalies for head 3 for machine DEMO01 on 2026-02-01` |
+| 01:00-01:30 the machine runs without caps | `Machine idle for machine DEMO01 from 2026-02-01T00:00:00 until 2026-02-01T06:00:00` |
+
+After installing (see below):
+
+```bash
+.venv/bin/python -m scripts.demo_agent --demo --question "show me the failure rate for each head"
+.venv/bin/streamlit run app/streamlit_app.py
+```
+
+The website uses the demo data automatically when no private pool exists (or
+when `AROL_DEMO=1`), and says so in a yellow banner. Without
+`ANTHROPIC_API_KEY` it answers with the offline rules (use the example
+questions); with a key, Claude understands everyday wording.
+
+### Put the website online (free)
+
+The app can be hosted on Streamlit Community Cloud so testers only need a link.
+It runs on the demo data and the offline rules, so it costs nothing and no
+private data or API key leaves your computer.
+
+1. Push the branch to GitHub (the repository is public).
+2. Sign in at https://share.streamlit.io with the GitHub account that can see the repository.
+3. *Create app* > *Deploy a public app from GitHub*: repository `EddyKhoury/arol-telemetry-ai`,
+   the branch, main file path `app/streamlit_app.py`. Under *Advanced settings*
+   choose Python 3.12. Do **not** add an Anthropic key as a secret: every visitor's
+   question would be billed to it.
+4. Deploy. The first start builds the demo data (a few seconds); then share the link.
+
+`app/requirements.txt` installs the runtime and website requirements. Hosted
+apps sleep after a period without visitors and wake up on the next visit.
 
 ## Run without private telemetry
 

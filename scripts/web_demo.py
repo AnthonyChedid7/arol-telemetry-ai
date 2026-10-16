@@ -30,20 +30,40 @@ if Path.cwd().resolve() != ROOT:
     st.error(f"Start the app from the repository root: {ROOT}")
     st.stop()
 
+@st.cache_resource(show_spinner="Building the synthetic demo dataset (first start only)...")
+def _demo_manifest() -> str:
+    from scripts.build_demo_pool import build
+    return str(build())
+
+
 # The manifest is selected by the operator, not by an untrusted web input:
 # AROL_MANIFEST if set, else the presentation pool if present, else the one
-# local pool under data/event_pools (resolve_manifest refuses to guess among several).
+# local pool under data/event_pools (resolve_manifest refuses to guess among
+# several). With no private pool at all (a fresh clone or the hosted demo), or
+# with AROL_DEMO=1, the page uses the synthetic demo pool so anyone can try it.
+local_pools = sorted((ROOT / "data/event_pools").glob("*/manifest.json"))
 requested_manifest = os.environ.get("AROL_MANIFEST") or (
     DEFAULT_MANIFEST if (ROOT / DEFAULT_MANIFEST).is_file() else None)
+demo_mode = os.environ.get("AROL_DEMO", "").strip() == "1" or (
+    requested_manifest is None and not local_pools)
 try:
-    manifest_path, manifest = resolve_manifest(requested_manifest, ROOT)
+    manifest_path, manifest = resolve_manifest(
+        _demo_manifest() if demo_mode else requested_manifest, ROOT)
 except ValueError as exc:
     st.error(str(exc))
     st.info("Set AROL_MANIFEST to a complete local pool manifest "
-            "(for example data/event_pools/<pool>/manifest.json) and restart.")
+            "(for example data/event_pools/<pool>/manifest.json), or AROL_DEMO=1 "
+            "for the synthetic demo data, and restart.")
     st.stop()
 
 machine = manifest["summary"]["machine_id"]
+if demo_mode:
+    st.warning(
+        "**Demo data.** This page is running on a synthetic, made-up dataset "
+        "(machine DEMO01, 2026-02-01, UTC), not AROL telemetry. Planted signals to "
+        "find: head 7 is weak (about 3% rejects), head 12 drifts upward 08:00-12:00, "
+        "head 3 has three over-limit closures, and 01:00-01:30 the machine runs "
+        "without caps. Try the examples below.")
 st.caption(f"Selected machine: {machine} | Head diagnostic and scoped analytics (registered tools)")
 
 # Claude understands everyday wording; the rules need the documented phrasing.
@@ -64,6 +84,10 @@ if planner_kind == "claude":
     st.sidebar.caption("Your question text is sent to the Anthropic API to choose the "
                        "analysis. Telemetry data stays on this computer. Without a key "
                        "or internet, the rules answer instead.")
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        st.sidebar.warning("No ANTHROPIC_API_KEY is set where this page runs, so the "
+                           "rules will answer. Run the project locally with your own "
+                           "key to use Claude.")
     st.info("Ask in your own words, for example: 'how hard were caps tightened on "
             "spindle 5 in the first hour?'. Check the 'Interpreted as' line in the report.")
 else:
@@ -88,6 +112,17 @@ examples = {
     "Head 5 success rate": f"Success rate for head 5 {window}",
     "Failure rate for each head — full pool": "show me the failure rate for each head",
     "Head 5 evidence check": f"Is anything wrong with head 5 {window}",
+    "Rank heads by success (demo: head 7 is weak)": (
+        f"Rank heads by cap-present success rate for machine {machine} on 2026-02-01"),
+    "Head 7 versus its peers": (
+        f"Compare head 7 with peers by cap-present success rate for machine {machine} on 2026-02-01"),
+    "Torque trend for head 12 (demo: drift)": (
+        f"Show torque trend for head 12 for machine {machine} "
+        "from 2026-02-01T06:00:00 until 2026-02-01T12:00:00"),
+    "Torque anomalies for head 3": (
+        f"Find torque anomalies for head 3 for machine {machine} on 2026-02-01"),
+    "Machine idle periods": (
+        f"Machine idle for machine {machine} from 2026-02-01T00:00:00 until 2026-02-01T06:00:00"),
 }
 
 chosen = st.selectbox("Choose an example", list(examples))
