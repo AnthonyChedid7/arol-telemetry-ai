@@ -178,10 +178,10 @@ def test_orchestration_reports_comparison_scope_without_causal_claims(sources,so
 def test_missing_focus_is_reported_without_substitution(sources):
     cfg={**CFG,'data':{'source':'person_a_pool','person_a':{'fixture':str(sources['person_a_pool'])}}}
     answer=Orchestrator(cfg=cfg).answer('compare head 99 with peers by cap-present success rate'+SUFFIX)
-    assert answer['status']=='ok'
-    r=answer['results'][0][1]['result']
-    assert r['focus'] is None and not r['comparison_available']
-    assert 'no other head was substituted' in answer['markdown']
+    assert answer['status']=='needs_clarification'
+    assert 'H99 is not in this data pool' in answer['message']
+    assert not answer['results']
+    assert answer['trace'].to_dict()['n_tool_calls']==0
 
 
 def test_invalid_scope_stops_before_source_load(sources,monkeypatch):

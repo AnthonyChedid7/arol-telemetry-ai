@@ -21,10 +21,9 @@ answers instead and the trace says so.
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from ..common import registry
 from .planner import Plan, Planner
+from .pool_scope import validate_pool_scope
 
 DEFAULT_MODEL = "claude-opus-5-5"
 
@@ -320,30 +319,7 @@ class ClaudePlanner(Planner):
         """Reject what the event source would refuse, before any data is loaded."""
         from ..common.event_pool_source import _read_plan
         _read_plan(calls)
-        summary = context.get("pool_summary") or {}
-        known = summary.get("machines") or ([context["selected_machine"]]
-                                            if context.get("selected_machine") else [])
-        heads = set(summary.get("heads") or [])
-        lo = datetime.fromisoformat(summary["ts_min"]) if summary.get("ts_min") else None
-        hi = datetime.fromisoformat(summary["ts_max"]) if summary.get("ts_max") else None
-        for _, args in calls:
-            machine = args.get("machine_id")
-            if machine is not None and known and machine not in known:
-                raise ValueError(f"machine {machine!r} is not in this data pool "
-                                 f"(available: {', '.join(known)})")
-            requested = [args.get("head_a"), args.get("head_b")]
-            requested += args["head_id"] if isinstance(args.get("head_id"), list) else [args.get("head_id")]
-            missing = sorted(h for h in requested if h is not None and heads and h not in heads)
-            if missing:
-                raise ValueError(f"head {', '.join(missing)} is not in this data pool "
-                                 f"(heads {min(heads)} to {max(heads)})")
-            # A window entirely outside the recorded data can only return nothing.
-            start = datetime.fromisoformat(args["start"]) if "start" in args else None
-            end = datetime.fromisoformat(args["end"]) if "end" in args else None
-            if ((lo is not None and end is not None and end <= lo)
-                    or (hi is not None and start is not None and start > hi)):
-                raise ValueError(f"the requested time window is outside the recorded data "
-                                 f"({summary['ts_min']} to {summary['ts_max']})")
+        validate_pool_scope(calls, context)
 
     def _reject(self, reason, proposed=""):
         self.validation_error = reason

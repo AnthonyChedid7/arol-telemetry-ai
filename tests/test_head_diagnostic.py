@@ -136,6 +136,20 @@ def test_web_page_asks_for_window_then_shows_evidence(cfg, tmp_path, monkeypatch
     assert not app.exception
     assert app.success[0].value == "Analysis completed"
     assert app.markdown[0].value.startswith("## Diagnostic answer")
+    assert "on closures excluding No Load cycles by default" in app.markdown[0].value
+    assert "across all observed statuses" not in app.markdown[0].value
     assert [item.label for item in app.expander] == [
         "Execution trace and planned tools", "Tool results"]
     assert app.session_state["result"]["trace"]["n_tool_calls"] == 2
+
+    # An answer must disappear as soon as its question or planner changes.
+    app.text_area[0].input("Is head 4 working properly?").run()
+    assert "result" not in app.session_state
+    assert not app.success
+
+    app.text_area[0].input(SCOPED).run()
+    app.button[0].click().run()
+    assert "result" in app.session_state
+    app.sidebar.radio[0].set_value("Claude (understands everyday wording)").run()
+    assert "result" not in app.session_state
+    assert not app.success

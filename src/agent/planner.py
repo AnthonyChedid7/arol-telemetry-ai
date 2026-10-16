@@ -93,9 +93,8 @@ class RulePlanner(Planner):
             clarification=(
                 "I could not identify a supported analysis. Ask for scoped torque "
                 "analysis, success rate, head comparison, observed throughput, or "
-                "machine idle. For a head check, try: 'Is anything wrong with "
-                "head 5 for machine M1 from 2026-02-01T00:00:00 until "
-                "2026-02-01T12:00:00'."
+                "machine idle. For a head check, specify a head, machine, and "
+                "bounded UTC time window."
             ),
             rationale="no complete supported request matched; no tools called",
         )

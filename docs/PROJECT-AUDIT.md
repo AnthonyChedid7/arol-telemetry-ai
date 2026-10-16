@@ -7529,3 +7529,86 @@ diagnostic request. This was a stale Streamlit process: it had loaded the old
 rerun with its updated UI. Restarting the localhost server replaced that
 process; port 8501 then responded from a new PID. The web page now gives an
 explicit restart instruction if this planner-version mismatch recurs.
+
+## Independent `audit-followups` release review (2026-10-16)
+
+**Implementation:** On an isolated worktree at published commit `baddff1`,
+reproduced three release defects. Rules-mode plans for a nonexistent head,
+mismatched machine or out-of-pool date previously reached the tool and produced
+an `ok` report with zero samples. Pool-scope checks now run in the common
+orchestrator before event loading and are shared with Claude's proposal check.
+The website now ties the displayed result to its question and planner, clearing
+it when either changes. A one-bucket throughput plot now uses the requested
+time interval as its horizontal axis. The head-diagnostic goal and pool count
+label now state the actual default population and observed-event meaning.
+Generic rules clarification no longer invents a machine ID or time window.
+Regression tests cover invalid pre-load scope, stale UI state, the single
+bucket axis, and mocked Anthropic 401/400 behavior. Existing tests expecting
+zero-sample `ok` responses for impossible head scopes were updated to expect
+clarification. Full details and the question matrix are in
+`docs/INDEPENDENT-RELEASE-REVIEW-2026-10-16.md` and ignored
+`data/release_review/question_matrix.json`.
+
+**Tests:** The untouched fetched commit passed 936 tests with 4 skips, 28/28
+controlled cases, anomaly TP=4/FP=0/FN=1, and its documented clean-checkout
+verification. A fresh Python 3.14.7/macOS lock-file environment installed and
+passed `pip check`. After local changes, the complete suite passed **943 tests,
+4 skipped**; controlled evaluation stayed 28/28 and anomaly counts were
+unchanged. Browser checks used the private 89-file manifest without copying
+it. Independent raw-row calculations for the H04 hour showed 844 closure
+torques, no default flags, and 497 No Load flags only when all statuses were
+explicitly included. A single configured local Ollama CLI question also ran.
+No Anthropic key was available, so current live Claude behavior is unverified.
+
+**Assumptions and milestone status:** Manifest machine, head and time metadata
+are trusted planning bounds; source rows remain the arithmetic evidence.
+Configured torque limits are not certified engineering limits. The repaired
+local worktree is suitable for a bounded, labelled prototype demo, but the
+published branch still needed these fixes incorporated at the time of this
+review. The Q3
+brief's cloud synchronization and decentralized MAS goals are not shown by
+this local implementation. **Next action:** review and integrate the local
+diff, run a small authorized live Claude suite if the API is part of the
+presentation, and explain the remaining Q3 scope and threshold limits.
+
+## Per-head failure-rate wording follow-up (2026-10-16)
+
+**Implementation:** The exact rules question `show me the failure rate for each
+head` previously clarified even though `success_rate_per_head` already computes
+the required counts. The KPI router now recognizes `failure rate` and `for each
+head`/`for every head`, preserves optional machine/time scope, and visibly
+interprets failure as rejection flags among confirmed cap-present observed
+events. Unsupported status prefilters still stop before loading. The website
+offers the exact question as an example, and the README states its denominator.
+
+**Tests and real data:** Focused KPI tests passed 51/51. The exact CLI question
+ran with deterministic rules on the original private manifest: 36 head groups,
+one registered tool call, and 54,722,936 observed events scanned lazily. It
+found 1,068 rejection flags among 31,430,108 confirmed cap-present events
+overall. A separate Polars scan of event Parquet using raw status codes 65
+and 0/65 matched both counts for all 36 heads. The full suite passed **948
+tests, 4 skipped**, and the controlled agent evaluation remained **28/28**;
+`git diff --check` passed.
+
+**Assumptions and milestone status:** This reported failure rate is the
+contract's cap-present rejection proxy, not the rate of every No Load cycle,
+every unknown-cap event, or all physical production. The one-machine historical
+pool is not live telemetry. The local demo path now answers the requested
+wording; earlier review fixes were uncommitted at this checkpoint. **Next action:** integrate
+the reviewed diff when authorized, and have the team confirm the intended
+business meaning of “failure rate” before presenting it as a plant KPI.
+
+## Reviewed branch handoff (2026-10-16)
+
+The reviewed code, regressions, README clarification, and final local
+verification report are included on the new local branch
+`audit-followups-release-fixes`, based on fetched `audit-followups` commit
+`baddff1c4de3d822d454711c3ab0ecb767632c98`. Generated reports and the
+private event pool remain ignored and outside the commit. The final pre-commit
+test run passed 948 tests with 4 skips; controlled evaluation passed 28/28.
+The post-commit clean-checkout verifier also passed those same gates from a
+temporary detached checkout.
+This creates a reviewable handoff while preserving the original checkout and
+the published branch. Next action: review the new branch, and separately
+confirm the business definition of failure rate and live Claude behavior
+before making those claims in a presentation.

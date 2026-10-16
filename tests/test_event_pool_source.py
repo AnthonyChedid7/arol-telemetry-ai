@@ -104,12 +104,13 @@ def test_empty_selection_is_not_broadened(pool, params):
     assert response["ok"] and response["result"]["sample_size"] == 0
 
 
-def test_unknown_head_report_stays_empty(pool):
+def test_unknown_head_report_asks_before_loading(pool):
     cfg, _, _ = pool
     answer = Orchestrator(cfg=cfg).answer("Average torque for head 99")
-    assert answer["status"] == "ok"
-    assert "No finite torque observations matched" in answer["markdown"]
-    assert answer["pool_meta"]["loaded_events"] == 0
+    assert answer["status"] == "needs_clarification"
+    assert "H99 is not in this data pool" in answer["message"]
+    assert answer["results"] == []
+    assert answer["trace"].to_dict()["n_tool_calls"] == 0
 
 
 def test_correlation_loads_both_heads_without_status_prefilter(pool):

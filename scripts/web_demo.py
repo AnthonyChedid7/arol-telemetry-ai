@@ -86,6 +86,7 @@ examples = {
         f"{window} for head 5 for successful closures"
     ),
     "Head 5 success rate": f"Success rate for head 5 {window}",
+    "Failure rate for each head — full pool": "show me the failure rate for each head",
     "Head 5 evidence check": f"Is anything wrong with head 5 {window}",
 }
 
@@ -97,6 +98,12 @@ question = st.text_area(
     height=110,
     placeholder="Ask for a machine, time window, head, and analysis.",
 )
+
+# Streamlit reruns when inputs change. Keep a displayed answer tied to the
+# exact question and planner that produced it, including before Analyze is clicked.
+request_key = (planner_kind, question.strip())
+if st.session_state.get("result_request") != request_key:
+    st.session_state.pop("result", None)
 
 if st.button("Analyze", type="primary"):
     st.session_state.pop("result", None)
@@ -131,6 +138,7 @@ if st.button("Analyze", type="primary"):
             payload = json.loads(response_json)
             assert status == payload["status"]
             st.session_state["result"] = payload
+            st.session_state["result_request"] = request_key
         except ValueError as exc:
             if "agent.planner must be" in str(exc):
                 st.error("The website has newer code than the running analysis server. "

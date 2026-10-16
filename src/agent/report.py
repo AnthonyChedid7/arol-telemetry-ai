@@ -418,7 +418,7 @@ def assemble(query, plan, results, pool_meta, trace, *, min_n=30) -> str:
          f"{len(pool_meta.get('heads', []))} heads."
          if pool_meta.get('n_raw_readings') is not None else
          f"- Pool `{pool_meta.get('pool')}` from the **{pool_meta.get('source', '?')}** "
-         f"source, {pool_meta.get('n_events', 0):,} closure events "
+         f"source, {pool_meta.get('n_events', 0):,} observed exact +1 events "
          f"across {len(pool_meta.get('heads', []))} heads."),
         f"- Window {pool_meta.get('ts_min')} to {pool_meta.get('ts_max')} "
         f"(clock: "

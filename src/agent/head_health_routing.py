@@ -62,7 +62,8 @@ def parse_head_health_request(query, *, selected_machine=None):
     return dict(
         goal=(f"Describe observed evidence for {params['head_id']}: compare its "
               "cap-present success with eligible peer heads and check its torque "
-              "across all observed statuses against configured anomaly rules. "
+              "on closures excluding No Load cycles by default against configured "
+              "anomaly rules. "
               "These checks do not establish a fault."),
         calls=[("compare_head_success", dict(params)),
                ("detect_torque_anomalies", dict(params))],

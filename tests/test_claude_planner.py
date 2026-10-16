@@ -171,6 +171,33 @@ def test_missing_credentials_fall_back_to_rules(planner, monkeypatch):
     assert plan.calls and "TypeError" in planner.last_error
 
 
+def test_sdk_authentication_failure_is_labelled_rules_fallback(planner, monkeypatch):
+    import anthropic
+    import httpx2
+
+    request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    error = anthropic.AuthenticationError(
+        "invalid key", response=httpx2.Response(401, request=request), body=None)
+    monkeypatch.setattr(planner, "_call", lambda *args: (_ for _ in ()).throw(error))
+    plan = planner.plan("Average torque for head 5 on 2026-02-01", {})
+    assert plan.calls and "AuthenticationError" in planner.last_error
+    assert "deterministic rules" in plan.rationale
+
+
+def test_sdk_bad_request_is_visible_not_fallback(planner, monkeypatch):
+    import anthropic
+    import httpx2
+
+    request = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
+    error = anthropic.BadRequestError(
+        "unknown model", response=httpx2.Response(400, request=request), body=None)
+    monkeypatch.setattr(planner, "_call", lambda *args: (_ for _ in ()).throw(error))
+    plan = planner.plan("Average torque for head 5 on 2026-02-01", {})
+    assert plan.ambiguous and not plan.calls
+    assert "misconfigured" in plan.clarification
+    assert planner.last_error is None
+
+
 def test_serving_model_is_recorded(planner, monkeypatch):
     reply = response(tool_use("torque_stats", {}))
     reply.model = "claude-opus-4-8"

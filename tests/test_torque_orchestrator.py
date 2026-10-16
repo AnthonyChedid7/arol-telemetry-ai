@@ -114,16 +114,15 @@ def test_missing_data_is_reported(setup):
     assert "Event Parquet not found" in answer["message"]
 
 
-def test_failed_filter_is_never_removed_and_retried(setup):
+def test_malformed_filter_is_rejected_before_load(setup):
     cfg, _ = setup
     engine = Orchestrator(cfg=cfg, planner=FixedPlanner({"start": "not-a-date"}))
     answer = engine.answer("Scoped request", pool="fixture")
-    assert answer["status"] == "degraded"
-    assert answer["results"][0][1]["ok"] is False
-    assert answer["trace"].to_dict()["n_tool_calls"] == 1
+    assert answer["status"] == "needs_clarification"
+    assert not answer["results"]
+    assert answer["trace"].to_dict()["n_tool_calls"] == 0
     assert not any(step["kind"] == "retry" for step in answer["trace"].steps)
-    assert "Mean: **" not in answer["markdown"]
-    assert "wider window or fewer filters" not in answer["markdown"]
+    assert "Invalid isoformat string" in answer["message"]
 
 
 def test_empty_status_selection_stays_empty(setup):

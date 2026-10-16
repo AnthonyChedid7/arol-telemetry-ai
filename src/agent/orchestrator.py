@@ -13,6 +13,7 @@ from ..common.runtime import dispatch_tool
 from ..analytics import registered_torque, registered_analytics, registered_kpi, registered_head_kpi, registered_temporal_kpi, registered_idle  # noqa: F401
 from . import report as report_mod
 from .planner import get_planner
+from .pool_scope import validate_pool_scope
 from .trace import Trace
 
 class Orchestrator:
@@ -88,6 +89,18 @@ class Orchestrator:
                 "results": [],
                 "plan": plan,
                 "trace": trace,
+            }
+
+        try:
+            validate_pool_scope(plan.calls, context)
+        except (ValueError, TypeError) as exc:
+            message = f"The requested scope is invalid: {exc}. No analysis was run."
+            trace.note("stopped for invalid pool scope before loading events")
+            return {
+                "status": "needs_clarification", "query": query,
+                "message": message,
+                "markdown": f"# Clarification needed\n\n{message}\n",
+                "results": [], "plan": plan, "trace": trace,
             }
 
         if (type(self.max_steps) is not int or self.max_steps < 1

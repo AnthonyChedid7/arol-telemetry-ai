@@ -54,3 +54,37 @@ def test_trend_series_is_thinned_but_drift_uses_every_point():
     assert thinned["result"]["drift_detected"] == full["result"]["drift_detected"]
     assert thinned["meta"]["series_points"] == {"returned": len(series), "total": n}
     assert "thinned" in thinned["meta"]["notes"]
+
+
+@pytest.mark.parametrize("question,reason", [
+    ("Average torque for head 40 from 2026-02-01T00:00:00 until 2026-02-01T01:00:00",
+     "H40 is not in this data pool"),
+    ("Average torque for head 4 for machine MISMATCH from 2026-02-01T00:00:00 until 2026-02-01T01:00:00",
+     "MISMATCH' is not in this data pool"),
+    ("Average torque for head 4 on 2027-01-01", "outside the recorded data"),
+])
+def test_rules_reject_invalid_pool_scope_before_event_load(question, reason):
+    from src.agent.orchestrator import Orchestrator
+
+    class ScopeOnlySource:
+        def describe_pool(self, pool):
+            return {"machines": ["M1"], "heads": ["H04"],
+                    "ts_min": "2026-02-01T00:00:00", "ts_max": "2026-02-01T23:59:59"}
+
+        def load_for_plan(self, pool, calls):
+            pytest.fail("invalid scope must not read event data")
+
+    answer = Orchestrator(cfg={"agent": {"planner": "diagnostic"}},
+                          source=ScopeOnlySource()).answer(
+                              question, pool="demo", selected_machine="M1")
+    assert answer["status"] == "needs_clarification"
+    assert reason in answer["message"]
+    assert answer["results"] == []
+
+
+def test_generic_clarification_does_not_invent_example_scope():
+    from src.agent.planner import RulePlanner
+    answer = RulePlanner().plan("Is the machine working?", {"selected_machine": "REAL_MACHINE"})
+    assert answer.ambiguous and not answer.calls
+    assert "M1" not in answer.clarification
+    assert "2026-02-01" not in answer.clarification

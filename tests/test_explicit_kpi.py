@@ -130,6 +130,29 @@ def test_kpi_question_preserves_complete_scope(base):
     assert [n for n,_ in plan.calls] == (['success_rate_per_head'] if 'per head' in base else ['success_rate','success_rate_per_head'])
 
 
+@pytest.mark.parametrize('question', [
+    'show me the failure rate for each head',
+    'Failure rate per head',
+    'What is the failure rate for every head?',
+])
+def test_per_head_failure_wording_uses_explicit_rejection_denominator(question):
+    plan = RulePlanner().plan(question, {})
+    assert not plan.ambiguous
+    assert plan.calls == [('success_rate_per_head', {})]
+    assert 'rejection flags among confirmed cap-present observed events' in plan.interpretation
+
+
+def test_per_head_failure_question_preserves_scope_and_rejects_status_prefilter():
+    scoped = RulePlanner().plan(
+        'Show me the failure rate for each head for machine M1 '
+        'from 2026-02-01T00:00:00 until 2026-02-01T01:00:00', {})
+    assert scoped.calls == [('success_rate_per_head', {
+        'machine_id': 'M1', 'start': '2026-02-01T00:00:00',
+        'end': '2026-02-01T01:00:00'})]
+    invalid = RulePlanner().plan('show me the failure rate for each head for status 0', {})
+    assert invalid.ambiguous and invalid.calls == []
+
+
 @pytest.mark.parametrize('query', [
     'success rate yesterday', 'success rate for successful closures',
     'success rate for status 0', 'success rate for all closures',
@@ -174,6 +197,20 @@ def test_kpi_orchestration_reports_counts_and_denominators(sources, source_name,
     if source_name=='person_a_pool':
         assert answer['pool_meta']['loaded_events']==8
         assert 'status_filter' not in answer['pool_meta']['selection_parameters']
+
+
+def test_failure_rate_for_each_head_runs_existing_kpi(sources):
+    cfg = {**CFG, 'data': {'source': 'person_a_pool',
+                         'person_a': {'fixture': str(sources['person_a_pool'])}}}
+    answer = Orchestrator(cfg=cfg).answer('show me the failure rate for each head')
+    assert answer['status'] == 'ok', answer.get('message')
+    assert answer['trace'].to_dict()['n_tool_calls'] == 1
+    assert answer['plan'].calls == [('success_rate_per_head', {})]
+    rows = answer['results'][0][1]['result']['per_head']
+    assert [(r['head_id'], r['n_reject_cap_present'], r['n_cap_present'])
+            for r in rows] == [('H05', 1, 2), ('H06', 0, 8)]
+    assert [r['reject_rate_cap_present'] for r in rows] == [0.5, 0.0]
+    assert 'Failure rate means rejection flags' in answer['markdown']
 
 
 def test_pool_rejects_kpi_status_prefilter(sources):

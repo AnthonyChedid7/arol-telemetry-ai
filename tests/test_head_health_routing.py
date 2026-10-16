@@ -93,7 +93,7 @@ def test_missing_head_health_scope_asks_plainly_without_loading(cfg, monkeypatch
 def test_generic_phrases_never_plan_unregistered_tools(query):
     plan = RulePlanner().plan(query, {})
     assert plan.ambiguous and not plan.calls
-    assert "for machine M1 from" in plan.clarification
+    assert "specify a head, machine, and bounded UTC time window" in plan.clarification
 
 
 @pytest.mark.parametrize("bad_anomaly", [

@@ -109,6 +109,13 @@ def _time(data, meta, target):
     y = [item["observed_events_per_hour"] for item in buckets]
     fig, ax = plt.subplots(figsize=(9, 4.5))
     ax.plot(_times(x), y, marker="o", color="#29627f")
+    # A one-bucket result has only one x coordinate. Matplotlib otherwise
+    # invents a multi-year date range around that point.
+    window = data.get("requested_window") or {}
+    start = window.get("start") or buckets[0].get("bucket_start")
+    end = window.get("end") or buckets[-1].get("bucket_end")
+    if start and end:
+        ax.set_xlim(*_times([start, end]))
     ax.set_xlabel("Requested interval start (UTC)")
     return _finish(ax, "Observed event throughput", "Observed events / hour", target)
 
