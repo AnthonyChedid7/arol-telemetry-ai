@@ -140,6 +140,85 @@ def _iso(value):
     return None if value is None else value.isoformat()
 
 
+def _check_input(path, machine_id):
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    if path.suffix.lower() != ".csv":
+        raise ValueError(f"Expected a CSV input: {path}")
+    # When using AROL's machine-bearing filenames, check the declared scope.
+    if path.name.startswith("telemetry_"):
+        prefix = f"telemetry_{machine_id}_"
+        if not path.name.startswith(prefix):
+            raise ValueError(f"Input filename does not match machine_id: {path.name}")
+
+
+def _last_row(frame):
+    # Reconstruct a one-row frame so carry state does not retain a
+    # view of the full preceding file's buffers.
+    return pl.DataFrame(frame.tail(1).to_dict(as_series=False), schema=frame.schema)
+
+
+def _build_partition(path, output, index, machine_id, heads, previous):
+    """Convert one input file into partition `index`; return (entry, heads, previous)."""
+    fingerprint = sha256_file(path)
+    stem = f"{index:04d}-{path.stem}.parquet"
+    raw_path = output / "raw" / stem
+    event_path = output / "events" / stem
+    _convert_input(path, raw_path)
+    if sha256_file(path) != fingerprint:
+        raise ValueError(f"Input changed during conversion: {path}")
+    raw = pl.read_parquet(raw_path)
+    frame, heads = _prepare(raw, heads)
+    del raw
+    if previous is not None and not frame.is_empty():
+        if frame["timestamp"][0] < previous["timestamp"][0]:
+            raise ValueError(f"Timestamps go backwards across files at {path.name}")
+    counts, boundary = _counter_counts(frame, heads, previous)
+    timing = _timestamp_counts(frame, previous)
+    # No event can arise from the baseline row: it has no predecessor
+    # in this temporary frame. All emitted attributes are current-row values.
+    stitched = (frame.lazy() if previous is None else
+                pl.concat([previous.lazy(), frame.lazy()], how="vertical"))
+    write_event_table_parquet(build_event_table_frame(stitched, machine_id), event_path)
+    event_summary = pl.scan_parquet(event_path).select(
+        pl.len().alias("n"), pl.col("ts").min().alias("lo"),
+        pl.col("ts").max().alias("hi"),
+    ).collect().row(0, named=True)
+    if event_summary["n"] != counts["exact_plus_one"]:
+        raise ValueError("Event count differs from independent exact +1 counter count")
+    ts_min = None if frame.is_empty() else frame["timestamp"][0]
+    ts_max = None if frame.is_empty() else frame["timestamp"][-1]
+    entry = {
+        "input_file": path.name, "input_sha256": fingerprint,
+        "raw_parquet": raw_path.relative_to(output).as_posix(),
+        "event_parquet": event_path.relative_to(output).as_posix(),
+        "event_sha256": sha256_file(event_path),
+        "input_rows": len(frame), "observed_events": event_summary["n"],
+        "ts_min": _iso(ts_min), "ts_max": _iso(ts_max),
+        "event_ts_min": _iso(event_summary["lo"]),
+        "event_ts_max": _iso(event_summary["hi"]),
+        "counter_counts": counts, "boundary_counts": boundary, **timing,
+    }
+    if not frame.is_empty():
+        previous = _last_row(frame)
+    return entry, heads, previous
+
+
+def _accumulate(summary, entry, n_heads):
+    summary["heads"] = n_heads
+    for key in ("input_rows", "observed_events"):
+        summary[key] += entry[key]
+    for key, value in entry["counter_counts"].items():
+        summary[key] += value
+        summary[f"boundary_{key}"] += entry["boundary_counts"][key]
+    for key in ("timestamp_gaps_over_1s", "duplicate_timestamp_transitions"):
+        summary[key] += entry[key]
+    if entry["ts_min"] is not None:
+        if summary["ts_min"] is None:
+            summary["ts_min"] = entry["ts_min"]
+        summary["ts_max"] = entry["ts_max"]
+
+
 def build_event_pool(csv_paths, output_dir, *, machine_id, progress=None):
     """Build a fresh single-machine pool in the supplied file order.
 
@@ -156,15 +235,7 @@ def build_event_pool(csv_paths, output_dir, *, machine_id, progress=None):
     if len(set(paths)) != len(paths):
         raise ValueError("Duplicate input paths are not accepted")
     for path in paths:
-        if not path.is_file():
-            raise FileNotFoundError(path)
-        if path.suffix.lower() != ".csv":
-            raise ValueError(f"Expected a CSV input: {path}")
-        # When using AROL's machine-bearing filenames, check the declared scope.
-        if path.name.startswith("telemetry_"):
-            prefix = f"telemetry_{machine_id}_"
-            if not path.name.startswith(prefix):
-                raise ValueError(f"Input filename does not match machine_id: {path.name}")
+        _check_input(path, machine_id)
     output = Path(output_dir).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     output.mkdir(exist_ok=False)
@@ -183,64 +254,12 @@ def build_event_pool(csv_paths, output_dir, *, machine_id, progress=None):
         for index, path in enumerate(paths, 1):
             if progress:
                 progress(f"{index}/{len(paths)} Reading {path.name}")
-            fingerprint = sha256_file(path)
-            stem = f"{index:04d}-{path.stem}.parquet"
-            raw_path = output / "raw" / stem
-            event_path = output / "events" / stem
-            _convert_input(path, raw_path)
-            if sha256_file(path) != fingerprint:
-                raise ValueError(f"Input changed during conversion: {path}")
-            raw = pl.read_parquet(raw_path)
-            frame, heads = _prepare(raw, heads)
-            del raw
-            if previous is not None and not frame.is_empty():
-                if frame["timestamp"][0] < previous["timestamp"][0]:
-                    raise ValueError(f"Timestamps go backwards across files at {path.name}")
-            counts, boundary = _counter_counts(frame, heads, previous)
-            timing = _timestamp_counts(frame, previous)
-            # No event can arise from the baseline row: it has no predecessor
-            # in this temporary frame. All emitted attributes are current-row values.
-            stitched = (frame.lazy() if previous is None else
-                        pl.concat([previous.lazy(), frame.lazy()], how="vertical"))
-            write_event_table_parquet(build_event_table_frame(stitched, machine_id), event_path)
-            event_summary = pl.scan_parquet(event_path).select(
-                pl.len().alias("n"), pl.col("ts").min().alias("lo"),
-                pl.col("ts").max().alias("hi"),
-            ).collect().row(0, named=True)
-            if event_summary["n"] != counts["exact_plus_one"]:
-                raise ValueError("Event count differs from independent exact +1 counter count")
-            ts_min = None if frame.is_empty() else frame["timestamp"][0]
-            ts_max = None if frame.is_empty() else frame["timestamp"][-1]
-            entry = {
-                "input_file": path.name, "input_sha256": fingerprint,
-                "raw_parquet": raw_path.relative_to(output).as_posix(),
-                "event_parquet": event_path.relative_to(output).as_posix(),
-                "event_sha256": sha256_file(event_path),
-                "input_rows": len(frame), "observed_events": event_summary["n"],
-                "ts_min": _iso(ts_min), "ts_max": _iso(ts_max),
-                "event_ts_min": _iso(event_summary["lo"]),
-                "event_ts_max": _iso(event_summary["hi"]),
-                "counter_counts": counts, "boundary_counts": boundary, **timing,
-            }
+            entry, heads, previous = _build_partition(path, output, index, machine_id, heads, previous)
             entries.append(entry)
-            summary["heads"] = len(heads)
-            for key in ("input_rows", "observed_events"):
-                summary[key] += entry[key]
-            for key, value in counts.items():
-                summary[key] += value
-                summary[f"boundary_{key}"] += boundary[key]
-            for key, value in timing.items():
-                summary[key] += value
-            if not frame.is_empty():
-                if summary["ts_min"] is None:
-                    summary["ts_min"] = _iso(ts_min)
-                summary["ts_max"] = _iso(ts_max)
-                # Reconstruct a one-row frame so carry state does not retain a
-                # view of the full preceding file's buffers.
-                previous = pl.DataFrame(frame.tail(1).to_dict(as_series=False), schema=frame.schema)
-            del frame, stitched
+            _accumulate(summary, entry, len(heads))
             if progress:
-                progress(f"    Saved {entry['observed_events']:,} events; boundary +1={boundary['exact_plus_one']}")
+                progress(f"    Saved {entry['observed_events']:,} events; "
+                         f"boundary +1={entry['boundary_counts']['exact_plus_one']}")
         manifest = {
             "format": "arol-event-pool-v1", "complete": True,
             "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -265,6 +284,72 @@ def build_event_pool(csv_paths, output_dir, *, machine_id, progress=None):
         }, indent=2) + "\n", encoding="utf-8")
         raise
     return output / "manifest.json"
+
+
+def _carry_state(output, entries):
+    """Head set and counter baseline after the last stored partition.
+
+    Re-derived from the stored raw Parquet exactly as the build derived them,
+    so appending a file equals having built the pool with that file last.
+    """
+    previous = None
+    heads = None
+    for entry in reversed(entries):
+        raw_path = (output / entry["raw_parquet"]).resolve()
+        if not raw_path.is_relative_to(output) or not raw_path.is_file():
+            raise ValueError(f"Raw partition missing from the pool: {entry['raw_parquet']}")
+        frame, found = _prepare(pl.read_parquet(raw_path), None)
+        heads = heads or found
+        if not frame.is_empty():
+            previous = _last_row(frame)
+            break
+    return heads, previous
+
+
+def append_to_event_pool(csv_path, manifest_path, *, progress=None):
+    """Add one CSV as the next partition of an existing completed pool.
+
+    The result equals building the pool with this file supplied last: the same
+    validation, baseline carry-over and summary. Files must be added in
+    chronological order; a file already in the pool is refused. On failure the
+    new partition's files are removed and the manifest is unchanged.
+    """
+    manifest_path = Path(manifest_path).resolve()
+    output = manifest_path.parent
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("format") != "arol-event-pool-v1" or manifest.get("complete") is not True:
+        raise ValueError("Expected a completed AROL event-pool manifest")
+    entries = manifest["partitions"]
+    machine_id = manifest["summary"]["machine_id"]
+    path = Path(csv_path).resolve()
+    _check_input(path, machine_id)
+    fingerprint = sha256_file(path)
+    if any(entry["input_sha256"] == fingerprint for entry in entries):
+        raise ValueError(f"This file is already in the event pool: {path.name}")
+    if any(entry["input_file"] == path.name for entry in entries):
+        raise ValueError(f"A file with this name is already in the event pool: {path.name}")
+    heads, previous = _carry_state(output, entries)
+    index = len(entries) + 1
+    if progress:
+        progress(f"Adding {path.name} as partition {index}")
+    try:
+        entry, heads, _ = _build_partition(path, output, index, machine_id, heads, previous)
+    except Exception:
+        stem = f"{index:04d}-{path.stem}.parquet"
+        for folder in ("raw", "events"):
+            (output / folder / stem).unlink(missing_ok=True)
+        raise
+    summary = dict(manifest["summary"])
+    summary["files"] += 1
+    _accumulate(summary, entry, len(heads))
+    updated = {**manifest, "summary": summary, "partitions": [*entries, entry],
+               "updated_utc": datetime.now(timezone.utc).isoformat()}
+    temporary = output / "manifest.json.tmp"
+    temporary.write_text(json.dumps(updated, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    temporary.replace(manifest_path)
+    if progress:
+        progress(f"    Saved {entry['observed_events']:,} events")
+    return entry
 
 
 def scan_event_pool(manifest_path, *, verify_hashes=False):

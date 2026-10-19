@@ -11,6 +11,7 @@ for this browser session only.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hmac
 import json
 import os
 from pathlib import Path
@@ -27,6 +28,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.demo_agent import answer_one, resolve_manifest  # noqa: E402
 from src.common import config as config_mod  # noqa: E402
+from src.common import pool_store  # noqa: E402
 from src.interface import brand  # noqa: E402
 from src.interface.dashboard import key_figures  # noqa: E402
 
@@ -35,6 +37,19 @@ DEFAULT_MANIFEST = (
 )
 
 config_mod.load_dotenv()  # a key or pool in the project's ignored .env file
+# On a host (e.g. Streamlit Community Cloud) the owner's key, storage and upload
+# password live in the app's Secrets settings, never in the repository. The
+# environment still wins.
+for _name in ("ANTHROPIC_API_KEY", "SUPABASE_URL", "SUPABASE_KEY",
+              "AROL_STORAGE_BUCKET", "AROL_UPLOAD_PASSWORD"):
+    if os.environ.get(_name):
+        continue
+    try:
+        _hosted = str(st.secrets.get(_name, "")).strip()
+    except Exception:  # no secrets.toml locally
+        break
+    if _hosted:
+        os.environ[_name] = _hosted
 st.set_page_config(page_title="AROL Telemetry Analysis", layout="wide",
                    page_icon=str(brand.LOGO) if brand.LOGO.is_file() else None)
 st.markdown(f"<style>{brand.HEADER_CSS}"
@@ -45,6 +60,8 @@ st.markdown(f"<style>{brand.HEADER_CSS}"
             "section[data-testid='stSidebar'] [data-testid='stCaptionContainer']{color:#E8EEF5}"
             "section[data-testid='stSidebar'] code{color:#F28C28;background:rgba(255,255,255,.08)}"
             "section[data-testid='stSidebar'] [data-testid='stAlert'] p{color:#1B2430}"
+            "section[data-testid='stSidebar'] [data-testid='stAlert']{background:#F4F6F9;"
+            "border-radius:.5rem}"
             "</style>", unsafe_allow_html=True)
 st.markdown(brand.header_html(
     "Telemetry Analysis Console",
@@ -62,15 +79,35 @@ def _demo_manifest() -> str:
     return str(build())
 
 
+STORED_DIR = ROOT / "data" / "stored_pool"
+store = pool_store.store_from_env()
+
+
+@st.cache_resource(show_spinner="Loading the uploaded telemetry...")
+def _stored_manifest() -> str | None:
+    path = pool_store.pull(store, STORED_DIR)
+    return None if path is None else str(path)
+
+
 # The manifest is selected by the operator, not by an untrusted web input:
-# AROL_MANIFEST if set, else the presentation pool if present, else the one
-# local pool under data/event_pools (resolve_manifest refuses to guess among
-# several). With no private pool at all (a fresh clone or the hosted demo), or
-# with AROL_DEMO=1, the page uses the synthetic demo pool so anyone can try it.
+# AROL_MANIFEST if set, else the uploaded pool when a store is configured
+# (SUPABASE_* or AROL_STORE_DIR), else the presentation pool if present, else
+# the one local pool under data/event_pools (resolve_manifest refuses to guess
+# among several). With no pool at all (a fresh clone, the hosted demo, or an
+# empty store), or with AROL_DEMO=1, the page uses the synthetic demo pool.
+forced_demo = os.environ.get("AROL_DEMO", "").strip() == "1"
+use_store = store is not None and not forced_demo and not os.environ.get("AROL_MANIFEST")
+stored_manifest = store_error = None
+if use_store:
+    try:
+        stored_manifest = _stored_manifest()
+    except Exception as exc:
+        store_error = f"{type(exc).__name__}: {exc}"
+uploaded_mode = stored_manifest is not None
 local_pools = sorted((ROOT / "data/event_pools").glob("*/manifest.json"))
-requested_manifest = os.environ.get("AROL_MANIFEST") or (
+requested_manifest = os.environ.get("AROL_MANIFEST") or stored_manifest or (
     DEFAULT_MANIFEST if (ROOT / DEFAULT_MANIFEST).is_file() else None)
-demo_mode = os.environ.get("AROL_DEMO", "").strip() == "1" or (
+demo_mode = forced_demo or (use_store and not uploaded_mode) or (
     requested_manifest is None and not local_pools)
 try:
     manifest_path, manifest = resolve_manifest(
@@ -90,17 +127,58 @@ with st.sidebar:
     if brand.LOGO.is_file():
         st.image(str(brand.LOGO), width=150)
     st.markdown("### Data source")
+    source_label = ("Synthetic demo data" if demo_mode else
+                    f"Uploaded telemetry ({summary.get('files', 0)} "
+                    f"file{'' if summary.get('files') == 1 else 's'})" if uploaded_mode else
+                    "Private event pool")
     st.markdown(
-        f"**{'Synthetic demo data' if demo_mode else 'Private event pool'}**  \n"
+        f"**{source_label}**  \n"
         f"Machine `{machine}`  \n"
-        f"{summary.get('ts_min', '?')[:16]} to {summary.get('ts_max', '?')[:16]} UTC  \n"
+        f"{(summary.get('ts_min') or '?')[:16]} to {(summary.get('ts_max') or '?')[:16]} UTC  \n"
         f"{summary.get('observed_events', 0):,} observed events, {summary.get('heads', '?')} heads")
+    if store_error:
+        st.error(f"The stored telemetry could not be loaded, so demo data is shown. {store_error}")
+    if use_store:
+        upload_password = os.environ.get("AROL_UPLOAD_PASSWORD", "")
+        with st.expander("Add a day of telemetry (CSV)"):
+            notice = st.session_state.pop("upload_notice", None)
+            if notice:
+                st.success(notice)
+            if not upload_password:
+                st.caption("Uploads are switched off. Set AROL_UPLOAD_PASSWORD in the app's "
+                           "secrets to allow them.")
+            else:
+                st.caption(f"Each file is checked, converted and kept in {store.describe()}. "
+                           "Use the AROL export name (telemetry_<machine>_<YYYY-MM-DD>.csv) "
+                           "and add days in date order.")
+                entered = st.text_input("Upload password", type="password", key="upload_password")
+                round_ = st.session_state.get("upload_round", 0)
+                upload = st.file_uploader("Daily telemetry CSV", type=["csv"], key=f"upload_{round_}")
+                if st.button("Add to the data", disabled=upload is None):
+                    if not hmac.compare_digest(entered.encode(), upload_password.encode()):
+                        st.error("Wrong upload password.")
+                    else:
+                        try:
+                            with st.spinner(f"Checking and converting {upload.name}..."):
+                                entry = pool_store.add_uploaded_csv(
+                                    store, STORED_DIR, upload.name, upload.getvalue())
+                        except Exception as exc:
+                            st.error(f"Not added. {exc}")
+                        else:
+                            _stored_manifest.clear()
+                            st.session_state["upload_round"] = round_ + 1
+                            span = (f"{entry['ts_min'][:16]} to {entry['ts_max'][:16]} UTC"
+                                    if entry.get("ts_min") else "no rows")
+                            st.session_state["upload_notice"] = (
+                                f"Added {entry['input_file']} ({span}): "
+                                f"{entry['observed_events']:,} events.")
+                            st.rerun()
     st.divider()
     st.markdown("### Claude (optional)")
     env_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
     if env_key:
-        st.caption("Using the Anthropic key configured on this computer "
-                   "(environment variable or the project's .env file).")
+        st.caption("Using the Anthropic key configured for this app "
+                   "(environment variable, the project's .env file or the host's secrets).")
     else:
         typed = st.text_input(
             "Your Anthropic API key", type="password", key="session_api_key",
@@ -144,6 +222,9 @@ if demo_mode:
         "find: head 7 is weak (about 3% rejects), head 12 drifts upward 08:00-12:00, "
         "head 3 has three over-limit closures, and 01:00-01:30 the machine runs "
         "without caps. Try the examples below.")
+    if use_store and not store_error:
+        st.info("No AROL telemetry has been uploaded yet. Add a daily CSV under "
+                "'Add a day of telemetry' in the sidebar.")
 st.caption(f"Selected machine: {machine} | Head diagnostic and scoped analytics (registered tools)")
 if planner_kind == "claude":
     st.info("Ask in your own words, for example: 'which head performs worst on Feb 1?' "

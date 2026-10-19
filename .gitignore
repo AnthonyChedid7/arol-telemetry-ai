@@ -16,6 +16,7 @@ venv/
 
 # Secrets and per-machine settings
 .env
+.streamlit/secrets.toml
 config.local.yaml
 
 # Default report/trace folders when agent.report_dir/trace_dir are not configured

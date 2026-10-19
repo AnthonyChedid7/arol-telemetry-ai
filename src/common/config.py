@@ -33,7 +33,9 @@ def _deep_merge(base: dict, override: dict) -> dict:
 
 DOTENV = REPO_ROOT / ".env"
 # Only these settings are read from .env, so it cannot change anything else.
-_DOTENV_KEYS = ("ANTHROPIC_API_KEY", "AROL_MANIFEST", "AROL_PLANNER", "AROL_DEMO")
+_DOTENV_KEYS = ("ANTHROPIC_API_KEY", "AROL_MANIFEST", "AROL_PLANNER", "AROL_DEMO",
+                "SUPABASE_URL", "SUPABASE_KEY", "AROL_STORAGE_BUCKET", "AROL_STORE_DIR",
+                "AROL_UPLOAD_PASSWORD")
 
 
 def load_dotenv(path: str | Path | None = None) -> list[str]:

@@ -6,7 +6,7 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
-from src.ingestion.event_pool import build_event_pool, scan_event_pool
+from src.ingestion.event_pool import append_to_event_pool, build_event_pool, scan_event_pool
 from src.ingestion.event_table_polars import EVENT_SCHEMA, build_event_table
 
 
@@ -204,3 +204,46 @@ def test_input_mutation_is_detected(tmp_path, raw, monkeypatch):
     with pytest.raises(ValueError, match="Input changed"):
         build(tmp_path, [raw])
     assert not (tmp_path / "pool/manifest.json").exists()
+
+
+# --- appending one file to an existing pool ------------------------------------------
+
+def _without_times(manifest_path):
+    data = json.loads(manifest_path.read_text())
+    data.pop("created_utc"), data.pop("updated_utc", None)
+    return data
+
+
+@pytest.mark.parametrize("splits", [[2, 5], [3], [0, 4], [6, 8]])
+def test_appending_equals_building_with_the_file_last(tmp_path, raw, splits):
+    bounds = [0, *splits, len(raw)]
+    frames = [raw[a:b] for a, b in zip(bounds, bounds[1:])]
+    paths = inputs(tmp_path, frames)
+    full = build_event_pool(paths, tmp_path / "full", machine_id="M1")
+    grown = build_event_pool(paths[:1], tmp_path / "grown", machine_id="M1")
+    for path in paths[1:]:
+        append_to_event_pool(path, grown)
+    assert _without_times(grown) == _without_times(full)
+    assert_frame_equal(scan_event_pool(grown, verify_hashes=True).collect(),
+                       scan_event_pool(full).collect())
+
+
+def test_append_refuses_duplicates_and_backwards_files_without_side_effects(tmp_path, raw):
+    paths = inputs(tmp_path, [raw[:4], raw[4:], raw[2:6]])
+    manifest = build_event_pool(paths[:2], tmp_path / "pool", machine_id="M1")
+    before = manifest.read_text()
+    files = sorted(p.name for p in (tmp_path / "pool").rglob("*.parquet"))
+    with pytest.raises(ValueError, match="already in the event pool"):
+        append_to_event_pool(paths[1], manifest)
+    with pytest.raises(ValueError, match="backwards"):
+        append_to_event_pool(paths[2], manifest)
+    assert manifest.read_text() == before
+    assert sorted(p.name for p in (tmp_path / "pool").rglob("*.parquet")) == files
+
+
+def test_append_checks_the_pool_machine(tmp_path, raw):
+    manifest = build(tmp_path, [raw[:4]])
+    other = tmp_path / "telemetry_M2_2026-02-01.csv"
+    raw[4:].write_csv(other)
+    with pytest.raises(ValueError, match="machine_id"):
+        append_to_event_pool(other, manifest)

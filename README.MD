@@ -129,6 +129,10 @@ private data or API key leaves your computer.
 `app/requirements.txt` installs the runtime and website requirements. Hosted
 apps sleep after a period without visitors and wake up on the next visit.
 
+To give visitors Claude without their own key, and to add a day of AROL
+telemetry at a time from the website (kept in a free Supabase bucket), follow
+[docs/HOSTING.md](docs/HOSTING.md).
+
 ## Run without private telemetry
 
 The full code tests and the small, controlled question evaluation work in a clean checkout:
