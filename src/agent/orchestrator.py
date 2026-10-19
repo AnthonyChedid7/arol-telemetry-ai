@@ -10,7 +10,7 @@ from ..common import config as config_mod
 from ..common import datasource, registry
 from ..common.event_pool_source import ScopeTooLarge
 from ..common.runtime import dispatch_tool
-from ..analytics import registered_torque, registered_analytics, registered_kpi, registered_head_kpi, registered_temporal_kpi, registered_idle  # noqa: F401
+from ..analytics import registered_torque, registered_analytics, registered_kpi, registered_head_kpi, registered_temporal_kpi, registered_idle, registered_daily_kpi  # noqa: F401
 from . import report as report_mod
 from .planner import get_planner
 from .pool_scope import validate_pool_scope

@@ -53,6 +53,11 @@ questions (success_rate, success_rate_per_head). "Which head is worst/best" \
 means rank_heads_by_success. "Is head N worse than the others", "how does head N \
 compare to its peers" means compare_head_success. Comparing the torque of two \
 specific heads means head_correlation.
+- Any head question asked per day, for each day, every day, daily or day by day \
+("worst head each day", "lowest success rate per head for each day", "which head \
+failed most every day") means head_success_by_day. It analyses each calendar day \
+separately, so omit start and end to cover all the data, or give the requested \
+period. Do not use rank_heads_by_success for these: it covers only one window.
 - Throughput, output, production rate, caps per hour mean observed_throughput. \
 Success rate or KPIs "per hour", "by hour", "over time", "hour by hour" mean \
 kpi_over_time. Both need bucket "hour" or "day".

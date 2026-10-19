@@ -118,8 +118,71 @@ def _head_failures(data, meta, target):
     return _finish(ax, "Cap-present failure rate (rejection flags) by head", "Failure (%)", target)
 
 
+def _daily(data, meta, target, failure=False):
+    """Top: each day's lowest-success (or highest-failure) head. Bottom: every head x day."""
+    days = data.get("days", [])
+    if not days:
+        return None
+    import numpy as np
+
+    rate = "reject_rate_cap_present" if failure else "success_rate_cap_present"
+    pick = "highest_failure_head" if failure else "lowest_success_head"
+    ties = "n_tied_highest_failure" if failure else "n_tied_lowest_success"
+    labels = [d["date"][5:] for d in days]
+    heads = sorted({h["head_id"] for d in days for h in d["heads"]})
+    grid = np.full((len(heads), len(days)), np.nan)
+    for j, day in enumerate(days):
+        for h in day["heads"]:
+            if h["eligible_for_ranking"] and h[rate] is not None:
+                grid[heads.index(h["head_id"]), j] = 100 * h[rate]
+    fig, (top, bottom) = plt.subplots(
+        2, 1, figsize=(max(9, 0.45 * len(days) + 3), 4.2 + 0.17 * len(heads)),
+        gridspec_kw={"height_ratios": [1, max(1.6, 0.06 * len(heads))]})
+    values = [100 * d[pick][rate] if d[pick] else np.nan for d in days]
+    bars = top.bar(range(len(days)), values, color="#F28C28" if failure else "#16365C")
+    for bar, day in zip(bars, days):
+        if day["partial_day"]:
+            bar.set_hatch("//")
+            bar.set_alpha(0.6)
+        if day[pick]:
+            text = ("all tied" if day[ties] == day["n_eligible_heads"]
+                    else day[pick]["head_id"] + ("*" if day[ties] > 1 else ""))
+            top.annotate(text, (bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                         ha="center", va="bottom", fontsize=7, rotation=90 if len(days) > 14 else 0)
+    finite = [v for v in values if v == v]
+    if finite and not failure:
+        low = min(finite)
+        top.set_ylim(max(0, low - (100 - low) * 0.6 - 0.001), 100 + (100 - low) * 0.25 + 0.001)
+    elif finite:
+        top.set_ylim(0, max(max(finite) * 1.3, 0.01))
+    top.set_xticks(range(len(days)), labels, rotation=90 if len(days) > 14 else 0, fontsize=8)
+    top.set_ylabel("Failure (%)" if failure else "Success (%)")
+    top.set_title(("Highest-failure head each day" if failure else "Lowest-success head each day")
+                  + "  (hatched = partial day, * = tie)", loc="left", fontsize=10)
+    top.grid(axis="y", alpha=0.2)
+    image = bottom.imshow(grid, aspect="auto", interpolation="nearest",
+                          cmap="Oranges" if failure else "Blues_r")
+    bottom.set_xticks(range(len(days)), labels, rotation=90 if len(days) > 14 else 0, fontsize=8)
+    bottom.set_yticks(range(len(heads)), heads, fontsize=7)
+    bottom.set_xlabel("Day (UTC as recorded)")
+    bottom.set_title(("Failure" if failure else "Success") + " rate of every head on every day "
+                     "(blank = too few closures)", loc="left", fontsize=10)
+    fig.colorbar(image, ax=bottom, label="%", fraction=0.03, pad=0.01)
+    fig.suptitle("Cap-present " + ("failure" if failure else "success") + " by head and day",
+                 x=0.01, ha="left")
+    fig.tight_layout()
+    fig.savefig(target, dpi=150, facecolor="white")
+    plt.close(fig)
+    return target
+
+
+def _daily_failures(data, meta, target):
+    return _daily(data, meta, target, failure=True)
+
+
 # Tool -> (output file stem, plotter) when the question asks about failures.
-FAILURE_PLOTTERS = {"success_rate_per_head": ("failure_rate_per_head", _head_failures)}
+FAILURE_PLOTTERS = {"success_rate_per_head": ("failure_rate_per_head", _head_failures),
+                    "head_success_by_day": ("head_failure_by_day", _daily_failures)}
 
 
 def _time(data, meta, target):
@@ -158,7 +221,8 @@ def _idle(data, meta, target):
 PLOTTERS = {"torque_distribution": _histogram, "torque_trend": _trend,
             "success_rate_per_head": _heads, "rank_heads_by_success": _heads,
             "compare_head_success": _heads, "kpi_over_time": _time,
-            "observed_throughput": _time, "machine_idle": _idle}
+            "observed_throughput": _time, "machine_idle": _idle,
+            "head_success_by_day": _daily}
 
 
 def render(results, out_dir, focus=""):

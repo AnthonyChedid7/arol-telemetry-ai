@@ -371,6 +371,7 @@ examples = {
     "Head 5 evidence check": f"Is anything wrong with head 5 {window}",
     "Rank heads by success" + hint("demo: head 7 is weak"): (
         f"Rank heads by cap-present success rate for machine {machine} {on_day}"),
+    "Lowest-success head for each day": "Which head has the lowest success rate for each day?",
     "Head 7 versus its peers": (
         f"Compare head 7 with peers by cap-present success rate for machine {machine} {on_day}"),
     "Torque trend for head 12" + hint("demo: drift"): (

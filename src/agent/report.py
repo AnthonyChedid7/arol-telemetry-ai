@@ -31,7 +31,7 @@ FAILURE = "failure"
 _FAILURE_WORDS = re.compile(r"\b(?:fail(?:s|ed|ing|ures?)?|reject(?:s|ed|ions?)?|defect(?:s|ive)?)\b", re.I)
 _SUCCESS_WORDS = re.compile(r"\bsuccess", re.I)
 # Tools whose findings, key figures and chart can lead with the failure rate.
-FOCUS_AWARE = frozenset({"success_rate", "success_rate_per_head"})
+FOCUS_AWARE = frozenset({"success_rate", "success_rate_per_head", "head_success_by_day"})
 
 
 def rate_focus(query: str) -> str:
@@ -96,6 +96,60 @@ def _finding_success_rate_per_head(result, meta, focus=""):
             lines.append(f"- This group has {row['n_cap_present']:,} cap-present observations, below min_n={row['min_cap_present_n']}.")
     if not rows:
         lines.append('- No observed events matched; no machine/head groups are available.')
+    return lines
+
+
+def _day_pick(day, key, rate_key, ties_key):
+    head = day[key]
+    if head is None:
+        return "not ranked (fewer than two eligible heads)", "n/a"
+    ties = day[ties_key]
+    if ties == day["n_eligible_heads"]:
+        return f"all {ties} heads tied", _pct(head[rate_key], 4)
+    return (head["head_id"] + (f" (+{ties - 1} tied)" if ties > 1 else "")), f"**{_pct(head[rate_key], 4)}**"
+
+
+def _finding_head_success_by_day(result, meta, focus=""):
+    days = result["days"]
+    lines = [f"- {result['n_days']} calendar day(s) for machine {result['machine_id']}, each analysed "
+             f"separately ({result['day_definition']}).",
+             f"- Heads with fewer than {result['min_cap_present_n']} cap-present observations on a day "
+             "are not ranked that day. Success = status 0 among confirmed cap-present events; "
+             "failure = rejection flags among the same events."]
+    if not days:
+        return lines + ["- No observed events matched; no days are available."]
+    failure_first = focus == FAILURE
+    header = (["Day", "Data covered", "Cap-present", "Highest failure head", "Failure rate",
+               "Lowest success head", "Success rate"] if failure_first else
+              ["Day", "Data covered", "Cap-present", "Lowest success head", "Success rate",
+               "Highest failure head", "Failure rate"])
+    lines += ["", "| " + " | ".join(header) + " |", "|---|---|---:|---|---:|---|---:|"]
+    for day in days:
+        covered = f"{day['first_event'][11:16]}-{day['last_event'][11:16]}" + (
+            " (partial)" if day["partial_day"] else "")
+        low = _day_pick(day, "lowest_success_head", "success_rate_cap_present", "n_tied_lowest_success")
+        high = _day_pick(day, "highest_failure_head", "reject_rate_cap_present", "n_tied_highest_failure")
+        picks = [*high, *low] if failure_first else [*low, *high]
+        lines.append(f"| {day['date']} | {covered} | {day['n_cap_present']:,} | " + " | ".join(picks) + " |")
+    ranked = [d for d in days if d["lowest_success_head"] and d["n_tied_lowest_success"] < d["n_eligible_heads"]]
+    if ranked:
+        key, rate = (("highest_failure_head", "reject_rate_cap_present") if failure_first
+                     else ("lowest_success_head", "success_rate_cap_present"))
+        pick = (max if failure_first else min)(ranked, key=lambda d: d[key][rate])
+        word = "highest failure" if failure_first else "lowest success"
+        lines += ["", f"- Across these days the {word} rate was {pick[key]['head_id']} on {pick['date']}: "
+                      f"{_pct(pick[key][rate], 4)} ({pick[key]['n_reject_cap_present' if failure_first else 'n_success_cap_present']:,}"
+                      f"/{pick[key]['n_cap_present']:,})."]
+    repeat = {}
+    for day in ranked:
+        head = day["highest_failure_head" if failure_first else "lowest_success_head"]["head_id"]
+        repeat[head] = repeat.get(head, 0) + 1
+    if repeat and max(repeat.values()) > 1:
+        lines.append("- Heads that were the " + ("highest-failure" if failure_first else "lowest-success")
+                     + " head on more than one day: "
+                     + ", ".join(f"{h} ({n} days)" for h, n in sorted(repeat.items(), key=lambda x: (-x[1], x[0]))
+                                 if n > 1) + ".")
+    lines.append("- Every head's rate for every day is in the chart and in the trace data.")
     return lines
 
 
@@ -421,6 +475,7 @@ FINDING_TEMPLATES = {
     "torque_stats": _finding_torque_stats,
     "success_rate": _finding_success_rate,
     "success_rate_per_head": _finding_success_rate_per_head,
+    "head_success_by_day": _finding_head_success_by_day,
     "anomaly_heads": _finding_anomaly_heads,
     "idle_periods": _finding_idle_periods,
     "machine_idle": _finding_machine_idle,
@@ -573,7 +628,8 @@ def _next_checks(ok_results, failed) -> list[str]:
                     "- Review counter discontinuities separately; this "
                     "report describes observed exact +1 events."
                 )
-        if name in {"success_rate", "success_rate_per_head", "rank_heads_by_success", "compare_head_success"}:
+        if name in {"success_rate", "success_rate_per_head", "rank_heads_by_success", "compare_head_success",
+                    "head_success_by_day"}:
             checks.append("- Review unknown status/cap-presence counts, sample sizes and observation coverage before comparing rates. These summaries do not establish machine stability or a fault cause.")
         if name in {'kpi_over_time', 'observed_throughput'}:
             checks.append('- Check raw telemetry coverage and the operating schedule before interpreting empty intervals or changes in observed-event rates.')

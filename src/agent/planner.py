@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..common import registry, timeutils
-from ..analytics import registered_torque, registered_analytics, registered_kpi, registered_head_kpi, registered_temporal_kpi, registered_idle  # noqa: F401
+from ..analytics import registered_torque, registered_analytics, registered_kpi, registered_head_kpi, registered_temporal_kpi, registered_idle, registered_daily_kpi  # noqa: F401
 
 
 @dataclass
@@ -74,6 +74,11 @@ class RulePlanner(Planner):
         torque_plan = _plan_torque_stats(query)
         if torque_plan is not None:
             return torque_plan
+
+        from .daily_kpi_routing import parse_daily_kpi_request
+        daily_plan = parse_daily_kpi_request(query)
+        if daily_plan is not None:
+            return Plan(**daily_plan)
 
         from .head_kpi_routing import parse_head_kpi_request
         head_plan = parse_head_kpi_request(query)
