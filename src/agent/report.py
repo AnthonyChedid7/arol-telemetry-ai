@@ -527,7 +527,7 @@ FINDING_TEMPLATES = {
 }
 
 
-def assemble(query, plan, results, pool_meta, trace, *, min_n=30) -> str:
+def assemble(query, plan, results, pool_meta, trace, *, min_n=30, answer=None) -> str:
     """Render the six mandated sections as Markdown."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     ok_results = [(name, r) for name, r in results if r.get("ok")]
@@ -542,6 +542,10 @@ def assemble(query, plan, results, pool_meta, trace, *, min_n=30) -> str:
     ]
     if getattr(plan, "interpretation", ""):
         out.append(f"*Interpreted as:* {plan.interpretation}")
+    if answer:
+        out += ["", "## Answer", "", answer["sentence"]]
+        if answer.get("table"):
+            out += ["", answer["table"]]
     out += [
         "",
         "## 1. Goal",

@@ -136,8 +136,13 @@ def test_web_page_asks_for_window_then_shows_evidence(cfg, tmp_path, monkeypatch
     app.text_area[0].input(SCOPED).run()
     app.button[0].click().run()
     assert not app.exception
-    assert app.success[0].value == "Analysis completed"
-    # The branded page shows the diagnostic answer first in the Summary tab.
+    # The direct answer comes first; the details stay hidden until asked for.
+    answers = [m.value for m in app.markdown if "class='answer'" in m.value]
+    assert len(answers) == 1 and "head H04" in answers[0]
+    assert not app.tabs
+    app.toggle(key="show_details").set_value(True).run()
+    assert not app.exception
+    # The details show the diagnostic explanation first in the Summary tab.
     assert any(m.value.startswith("## Diagnostic answer") for m in app.markdown)
     page = "\n".join(m.value for m in app.markdown)
     assert "on closures excluding No Load cycles by default" in page
@@ -150,11 +155,11 @@ def test_web_page_asks_for_window_then_shows_evidence(cfg, tmp_path, monkeypatch
     # An answer must disappear as soon as its question or planner changes.
     app.text_area[0].input("Is head 4 working properly?").run()
     assert "result" not in app.session_state
-    assert not app.success
+    assert not [m for m in app.markdown if "class='answer'" in m.value]
 
     app.text_area[0].input(SCOPED).run()
     app.button[0].click().run()
     assert "result" in app.session_state
     app.sidebar.radio(key="planner").set_value("Claude (understands everyday wording)").run()
     assert "result" not in app.session_state
-    assert not app.success
+    assert not [m for m in app.markdown if "class='answer'" in m.value]

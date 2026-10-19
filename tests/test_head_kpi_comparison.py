@@ -195,8 +195,12 @@ def test_invalid_scope_stops_before_source_load(sources,monkeypatch):
 def test_comparison_does_not_remove_peers_to_fit_memory_limit(sources):
     cfg={**CFG,'data':{'source':'person_a_pool','person_a':{'fixture':str(sources['person_a_pool'])},'max_loaded_events':10}}
     answer=Orchestrator(cfg=cfg).answer(COMPARE_QUERY+SUFFIX)
-    assert answer['status']=='needs_clarification'
-    assert answer['results']==[] and answer['trace'].to_dict()['n_tool_calls']==0
+    # Above the memory limit the comparison is aggregated while scanning, so every
+    # peer stays in the population; none is dropped to fit (it used to refuse).
+    assert answer['status']=='ok', answer.get('message')
+    assert answer['pool_meta']['materialization'].startswith('aggregated lazily')
+    small=Orchestrator(cfg={**cfg,'data':{**cfg['data'],'max_loaded_events':1_000_000}}).answer(COMPARE_QUERY+SUFFIX)
+    assert answer['results'][0][1]['result']==small['results'][0][1]['result']
 
 
 @pytest.mark.parametrize('query',[RANK_QUERY+SUFFIX,COMPARE_QUERY+SUFFIX])

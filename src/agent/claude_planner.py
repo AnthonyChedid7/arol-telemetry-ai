@@ -58,6 +58,11 @@ specific heads means head_correlation.
 failed most every day") means head_success_by_day. It analyses each calendar day \
 separately, so omit start and end to cover all the data, or give the requested \
 period. Do not use rank_heads_by_success for these: it covers only one window.
+- Rankings and comparisons (which head is best/worst, highest/lowest rate \
+overall, compare a head with the others) with no time reference mean all the \
+data: use the data range from the context as start and end (start = first \
+timestamp, end = one second after the last), and the per-head tools \
+(success_rate_per_head, rank_heads_by_success) for "each head".
 - Throughput, output, production rate, caps per hour mean observed_throughput. \
 Success rate or KPIs "per hour", "by hour", "over time", "hour by hour" mean \
 kpi_over_time. Both need bucket "hour" or "day".
@@ -106,7 +111,8 @@ If the question cannot be answered with the tools, needs a combination not \
 listed, or lacks something a tool requires (for example a time window for a \
 tool that requires start and end, when the question gives no time reference at \
 all), do not call any tool. Instead reply with one short clarification question \
-saying what is missing. Never guess a time window the user did not imply.\
+saying what is missing. Never guess a time window the user did not imply; the one \
+exception is rankings and comparisons, which mean all the data (see above).\
 """
 
 _FRIENDLY_STATUS = {"successful": "successful closures only",
@@ -200,6 +206,9 @@ class ClaudePlanner(Planner):
         self.max_retries = int(settings.get("max_retries", 1))
         self.max_question_chars = int(settings.get("max_question_chars", 1000))
         self.fallback = bool(settings.get("fallback_to_rules", True))
+        # Claude also words the direct answer from the computed summary results
+        # (counts and rates, never raw rows); false keeps the built-in answer.
+        self.answer_from_results = bool(settings.get("answer_from_results", True))
         # A key a website visitor typed for this session only (never read from
         # files: config.load refuses keys in config). Otherwise the SDK uses
         # ANTHROPIC_API_KEY from the environment or the project's .env file.
@@ -348,3 +357,104 @@ class ClaudePlanner(Planner):
         """Reuse the deterministic head-check explanation for the head-check pair."""
         from .head_diagnostic import HeadDiagnosticPlanner
         return HeadDiagnosticPlanner().explain(query, results, report)
+
+    # -- answering ---------------------------------------------------------
+
+    def _call_answer(self, content: str):
+        """One Messages API request for the answer. Overridden in tests."""
+        return self._client_or_create().beta.messages.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            system=[{"type": "text", "text": ANSWER_PROMPT,
+                     "cache_control": {"type": "ephemeral"}}],
+            tools=[ANSWER_TOOL],
+            tool_choice={"type": "auto"},
+            output_config={"effort": self.effort},
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+            messages=[{"role": "user", "content": content}],
+        )
+
+    def compose_answer(self, query, plan, results, meta, draft):
+        """Claude words the direct answer from the computed results (numbers checked by the caller).
+
+        Sends the question and the tools' summary results (counts and rates; no
+        raw telemetry rows). Returns {sentence, artifact, metric} or None.
+        """
+        if not self.answer_from_results:
+            return None
+        from .answer import ARTIFACTS, METRICS, TOOL_ARTIFACTS, compact_results
+        names = [name for name, reply in results if reply.get("ok")]
+        forms = sorted(set().union(*(TOOL_ARTIFACTS.get(n, ("none",)) for n in names)))
+        content = (f"<question>\n{query}\n</question>\n\n"
+                   f"<interpretation>\n{getattr(plan, 'interpretation', '')}\n</interpretation>\n\n"
+                   f"<available_forms>{', '.join(forms)}</available_forms>\n\n"
+                   f"<data_range>{(meta or {}).get('ts_min')} to {(meta or {}).get('ts_max')} (UTC as recorded)</data_range>\n\n"
+                   f"<results>\n{compact_results(results)}\n</results>\n\n"
+                   f"<built_in_answer>\n{draft.get('sentence', '')}\n(form: {draft.get('artifact')}, metric: {draft.get('metric')})\n</built_in_answer>")
+        response = self._call_answer(content)
+        usage = getattr(response, "usage", None)
+        if usage is not None and self.last_usage is not None:
+            for key in ("input_tokens", "output_tokens"):
+                if getattr(usage, key, None) is not None:
+                    self.last_usage[f"answer_{key}"] = getattr(usage, key)
+        block = next((b for b in (getattr(response, "content", None) or [])
+                      if getattr(b, "type", None) == "tool_use" and getattr(b, "name", "") == "give_answer"), None)
+        if block is None or not isinstance(block.input, dict):
+            return None
+        data = block.input
+        sentence = data.get("answer")
+        if not isinstance(sentence, str) or not sentence.strip() or len(sentence) > 1500:
+            return None
+        return dict(sentence=sentence,
+                    artifact=data.get("form") if data.get("form") in ARTIFACTS else None,
+                    metric=data.get("metric") if data.get("metric") in METRICS else None)
+
+
+ANSWER_PROMPT = """\
+You write the direct answer an engineer sees first, for a question about AROL \
+capping-machine telemetry. The analysis already ran; its results are given. \
+Answer exactly what was asked, the way a colleague would in conversation, and \
+nothing else: no caveats, no method description, no extra findings (those are \
+shown separately under Details). Do not add facts the question did not ask for, \
+such as which head was lowest, an overall machine rate or a runner-up. When the \
+answer is a table or a chart, one short sentence introducing it is the whole \
+answer, unless the question also asks something specific.
+
+Rules:
+- Use only numbers that appear in the results (you may round them; rates are \
+fractions, so 0.000497 is 0.0497%). Never compute new numbers such as sums, \
+differences or averages yourself. If the results cannot answer the question, say \
+so in one sentence.
+- One to three full sentences. Name heads as H05 and days as 2026-02-03.
+- "Success rate" means status 0 among closures with a cap; "failure", "error" or \
+"reject" rate means rejection flags among the same closures. "Caps closed" means \
+closures with a cap (n_cap_present).
+- If several heads share the answer value (for example many heads at 0% failure), \
+say how many share it and name a few; do not pick one.
+- Choose the form that shows what was asked: "chart" if the user asked for a plot, \
+graph, chart or visual; "head_day_table" for every head on every day; \
+"head_table" for every head; "day_table" for one row per day; "interval_table" for \
+per-hour or per-day intervals; "none" when the sentence itself is the answer. Use \
+only forms listed in <available_forms>. Pick the metric the table should show.
+- A built-in answer is given for reference; improve on it when the question asks \
+for something more specific, otherwise keep its facts.
+
+Reply only by calling the give_answer tool.\
+"""
+
+ANSWER_TOOL = {
+    "name": "give_answer",
+    "description": "The direct answer to the user's question and the form to show it in.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "answer": {"type": "string", "description": "1-3 full sentences answering exactly the question."},
+            "form": {"type": "string", "enum": ["none", "chart", "head_table", "head_day_table",
+                                                "day_table", "interval_table"]},
+            "metric": {"type": "string", "enum": ["success_rate", "failure_rate", "rejects", "closures"]},
+        },
+        "required": ["answer", "form", "metric"],
+        "additionalProperties": False,
+    },
+}

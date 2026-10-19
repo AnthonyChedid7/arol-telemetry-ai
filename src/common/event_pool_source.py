@@ -17,9 +17,11 @@ SUPPORTED_TOOLS = frozenset(['compare_head_success', 'detect_torque_anomalies', 
 
 # Tools whose answer is a set of totals, so they can run on a LazyFrame over any
 # scope; every other tool needs rows in memory and keeps max_loaded_events.
-# head_success_by_day aggregates one day at a time, so it is never materialized either.
+# head_success_by_day aggregates one day at a time, so it is never materialized either;
+# the head ranking and peer comparison only need the per-head KPI totals.
 LAZY_AGGREGATE_TOOLS = frozenset({"torque_stats", "success_rate", "success_rate_per_head",
-                                  "head_success_by_day"})
+                                  "head_success_by_day", "rank_heads_by_success",
+                                  "compare_head_success"})
 
 
 class ScopeTooLarge(ValueError):

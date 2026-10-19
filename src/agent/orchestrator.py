@@ -196,8 +196,13 @@ class Orchestrator:
             status = "ok"
         trace.step("validate", status=status, n_ok=len(ok), n_total=len(results))
 
+        # The direct answer to the question, before any detail. Claude may word
+        # it (numbers checked against the results) unless it already fell back.
+        from . import answer as answer_mod
+        writer = None if getattr(self.planner, "last_error", None) else self.planner
+        answer = answer_mod.compose(query, plan, results, meta, planner=writer, trace=trace)
         markdown = report_mod.assemble(query, plan, results, meta, trace,
-                                       min_n=self.min_n)
+                                       min_n=self.min_n, answer=answer)
         if status == "ok" and callable(getattr(self.planner, "explain", None)):
             explanation = self.planner.explain(query, results, markdown)
             if explanation:
@@ -214,6 +219,7 @@ class Orchestrator:
             "plan": plan,
             "trace": trace,
             "pool_meta": meta,
+            "answer": answer,
         }
 
     # -- delivery ----------------------------------------------------------

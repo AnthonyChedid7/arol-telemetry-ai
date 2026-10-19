@@ -11,7 +11,15 @@ app restarts or sleeps.
 |---|---|---|
 | Streamlit Community Cloud | runs the website | free |
 | Supabase (Free plan) | keeps uploaded telemetry: 1 GB, about 2.6 MB per day, so roughly 380 days | free |
-| Anthropic API | Claude answers questions | paid per question, from the key owner's credits |
+| Anthropic API | Claude understands the question and words the answer | paid per question, from the key owner's credits (two requests per question) |
+
+**What is sent to Anthropic** with the Claude option: the question, the data's
+machine and time range, and, to word the answer, the computed results (counts
+and rates per head, day or interval). Raw telemetry rows are never sent. Every
+number in Claude's answer is checked against the computed results; if one does
+not match, the built-in answer is shown instead. Set
+`agent.claude.answer_from_results: false` in `config.yaml` to keep the results
+on the server (Claude then only plans; the built-in answer is shown).
 
 Free-plan limits to know: Supabase pauses a project after 1 week without
 activity (press **Restore** in the Supabase dashboard). Streamlit puts an app

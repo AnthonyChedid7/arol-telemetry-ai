@@ -4,7 +4,7 @@ from datetime import datetime
 
 DAY = re.compile(r'\b(?:(?:each|every|per|by) day|day by day|daily|for each of the days)\b', re.I)
 HEADS = re.compile(r'\bheads?\b', re.I)
-METRIC = re.compile(r'\b(?:success(?:ful)?|fail(?:s|ed|ing|ures?)?|reject(?:s|ed|ions?)?|errors?|worst|best|'
+METRIC = re.compile(r'\b(?:success(?:ful)?|fail(?:s|ed|ing|ures?)?|reject(?:s|ed|ions?)?|errors?|perform(?:s|ed|ing|ance)?|worst|best|'
                     r'lowest|highest|rank(?:ed|ing|s)?|weakest)\b', re.I)
 FAILURE = re.compile(r'\b(?:fail(?:s|ed|ing|ures?)?|reject(?:s|ed|ions?)?|errors?)\b', re.I)
 MACHINE = re.compile(r'\bfor machine (\S+)', re.I)

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 import hmac
+import html
 import json
 import os
 from pathlib import Path
@@ -71,6 +72,8 @@ st.markdown(f"<style>{brand.HEADER_CSS}"
             "background:transparent;color:#FFFFFF}"
             "section[data-testid='stSidebar'] [data-testid='stExpander'] summary *{color:#FFFFFF}"
             "section[data-testid='stSidebar'] [data-testid='stBaseButton-secondary'] p{color:#1B2430}"
+            ".answer{font-size:1.12rem;line-height:1.5;padding:.85rem 1.1rem;margin:.2rem 0 .8rem;"
+            "background:#FFFFFF;border-left:4px solid #F28C28;border-radius:.4rem;color:#1B2430}"
             "</style>", unsafe_allow_html=True)
 st.markdown(brand.header_html(
     "Telemetry Analysis Console",
@@ -301,8 +304,9 @@ with st.sidebar:
     )
     planner_kind = PLANNERS[planner_label]
     if planner_kind == "claude":
-        st.caption("Only the question text and the pool's machine/time range go to the "
-                   "Anthropic API. Telemetry stays where this page runs.")
+        st.caption("Sent to the Anthropic API: the question, the data's machine/time range and, "
+                   "to word the answer, the computed results (counts and rates per head or day). "
+                   "Raw telemetry rows stay where this page runs.")
         if not key_available:
             st.warning("No API key is available, so the rules will answer. "
                        "Paste your own key above to use Claude.")
@@ -457,13 +461,11 @@ def _section(markdown, heading):
 payload = st.session_state.get("result")
 if payload is not None:
     status = payload["status"]
-    st.markdown("#### Result")
-    st.caption(f"Analysis route: {payload['planner']}")
-    if status == "ok":
-        st.success("Analysis completed")
-    elif status == "needs_clarification":
+    st.markdown("#### Answer")
+    answer = payload.get("answer") if status in ("ok", "partial") else None
+    if status == "needs_clarification":
         st.info(payload.get("message") or "Please narrow or clarify the question.")
-    else:
+    elif status not in ("ok",):
         st.warning(f"Analysis status: {status}")
 
     # deliver() appends relative PNG links to the saved Markdown file.
@@ -473,60 +475,77 @@ if payload is not None:
     diagnostic, _, report = display_markdown.partition("# Telemetry report")
     report = ("# Telemetry report" + report) if report else display_markdown
     diagnostic = diagnostic.strip() if report is not display_markdown else ""
+    figure_paths = [Path(name) for name in payload["artifacts"].get("figures", [])]
+    if answer:
+        # Exactly what was asked: the sentence, then the table or chart it asked for.
+        st.markdown(f"<div class='answer'>{html.escape(answer['sentence'])}</div>",
+                    unsafe_allow_html=True)
+        if answer.get("table"):
+            st.markdown(answer["table"])
+        if answer.get("artifact") == "chart":
+            for image_path in figure_paths:
+                st.image(str(image_path), caption=image_path.stem.replace("_", " "))
+        st.caption("Answer worded by Claude from the computed results; every number in it was "
+                   "checked against them." if answer.get("source") == "claude" else
+                   "Answer written from the computed results.")
     interpreted = re.search(r"\*Interpreted as:\*\s*(.+)", report)
     if interpreted:
         st.markdown(f"<div class='interp'><b>Interpreted as:</b> "
                     f"{interpreted.group(1).replace('`', '')}</div>", unsafe_allow_html=True)
+    st.caption(f"Analysis route: {payload['planner']}")
 
-    figures = key_figures(payload["results"], focus=payload.get("focus", ""),
-                          extreme=payload.get("extreme", ""))
-    if figures:
-        st.markdown(brand.kpi_cards_html(figures), unsafe_allow_html=True)
+    # Everything else stays one click away for whoever wants to investigate.
+    show_details = st.toggle("Show details for further investigation (key figures, full report, "
+                             "charts, trace and downloads)", value=answer is None, key="show_details")
+    if show_details:
+        figures = key_figures(payload["results"], focus=payload.get("focus", ""),
+                              extreme=payload.get("extreme", ""))
+        if figures:
+            st.markdown(brand.kpi_cards_html(figures), unsafe_allow_html=True)
 
-    figure_paths = [Path(name) for name in payload["artifacts"].get("figures", [])]
-    tab_summary, tab_charts, tab_report, tab_trace, tab_downloads = st.tabs(
-        ["Summary", f"Charts ({len(figure_paths)})", "Full report", "Trace & data", "Downloads"])
-    with tab_summary:
-        if diagnostic:
-            st.markdown(diagnostic)
-        findings = _section(report, "4. Findings")
-        if findings:
-            st.markdown("#### Findings")
-            st.markdown(findings)
-        limits = _section(report, "5. Confidence and limits")
-        if limits:
-            with st.expander("Confidence and limits"):
-                st.markdown(limits)
-        if not (diagnostic or findings):
+        tab_summary, tab_charts, tab_report, tab_trace, tab_downloads = st.tabs(
+            ["Summary", f"Charts ({len(figure_paths)})", "Full report", "Trace & data", "Downloads"])
+        with tab_summary:
+            if diagnostic:
+                st.markdown(diagnostic)
+            findings = _section(report, "4. Findings")
+            if findings:
+                st.markdown("#### Findings")
+                st.markdown(findings)
+            limits = _section(report, "5. Confidence and limits")
+            if limits:
+                with st.expander("Confidence and limits"):
+                    st.markdown(limits)
+            if not (diagnostic or findings):
+                st.markdown(report)
+        with tab_charts:
+            if not figure_paths:
+                st.caption("This analysis has no chart.")
+            for image_path in figure_paths:
+                st.image(str(image_path), caption=image_path.stem.replace("_", " "))
+        with tab_report:
             st.markdown(report)
-    with tab_charts:
-        if not figure_paths:
-            st.caption("This analysis has no chart.")
-        for image_path in figure_paths:
-            st.image(str(image_path), caption=image_path.stem.replace("_", " "))
-    with tab_report:
-        st.markdown(report)
-    with tab_trace:
-        st.write("Planned calls:", payload["planned_calls"])
-        with st.expander("Execution trace", expanded=False):
-            st.json(payload["trace"])
-        with st.expander("Tool results (raw)", expanded=False):
-            st.json(payload["results"])
-    with tab_downloads:
-        from src.interface.export import to_html
-        html_report = to_html(display_markdown, key_figures=figures, embed=True,
-                              figures=[(p.stem, p) for p in figure_paths],
-                              title=f"AROL telemetry report - {payload['query'][:60]}")
-        st.download_button("Download report (HTML, printable)", html_report,
-                           file_name="arol-report.html", mime="text/html",
-                           key="report-html", type="primary")
-        st.download_button("Download report (Markdown)", saved_markdown,
-                           file_name="arol-report.md", mime="text/markdown", key="report")
-        st.download_button("Download trace (JSON)",
-                           json.dumps(payload["trace"], indent=2, ensure_ascii=False),
-                           file_name="arol-trace.json", mime="application/json", key="trace")
-        for index, image_path in enumerate(figure_paths):
-            st.download_button(f"Download chart {index + 1} (PNG)", image_path.read_bytes(),
-                               file_name=image_path.name, mime="image/png", key=f"figure-{index}")
-        st.caption("Open the HTML report in a browser and print it to PDF if needed. "
-                   "Reports and traces are also saved under data/web_demo_runs/.")
+        with tab_trace:
+            st.write("Planned calls:", payload["planned_calls"])
+            with st.expander("Execution trace", expanded=False):
+                st.json(payload["trace"])
+            with st.expander("Tool results (raw)", expanded=False):
+                st.json(payload["results"])
+        with tab_downloads:
+            from src.interface.export import to_html
+            html_report = to_html(display_markdown, key_figures=figures, embed=True,
+                                  figures=[(p.stem, p) for p in figure_paths],
+                                  title=f"AROL telemetry report - {payload['query'][:60]}")
+            st.download_button("Download report (HTML, printable)", html_report,
+                               file_name="arol-report.html", mime="text/html",
+                               key="report-html", type="primary")
+            st.download_button("Download report (Markdown)", saved_markdown,
+                               file_name="arol-report.md", mime="text/markdown", key="report")
+            st.download_button("Download trace (JSON)",
+                               json.dumps(payload["trace"], indent=2, ensure_ascii=False),
+                               file_name="arol-trace.json", mime="application/json", key="trace")
+            for index, image_path in enumerate(figure_paths):
+                st.download_button(f"Download chart {index + 1} (PNG)", image_path.read_bytes(),
+                                   file_name=image_path.name, mime="image/png", key=f"figure-{index}")
+            st.caption("Open the HTML report in a browser and print it to PDF if needed. "
+                       "Reports and traces are also saved under data/web_demo_runs/.")
