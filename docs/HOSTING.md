@@ -75,15 +75,34 @@ It should print `OK: write and read work.` and `No telemetry uploaded yet.`
 Secrets can be changed later in the app's **Settings → Secrets**; the app
 restarts and keeps the uploaded data.
 
-## 3. Adding a day of telemetry
+## 3. Choosing the data and adding days
 
-1. Open the website. In the sidebar, open **Add a day of telemetry (CSV)**.
+The sidebar's **Data to analyse** offers:
+
+- **AROL telemetry (shared, stored)**: every day added to Supabase, for everyone
+  using the site. Selected by default once a day is stored.
+- **My own CSV files (this session only)**: choose up to 7 daily CSVs of one
+  machine and click **Analyse these files**. They are converted for your
+  browser session only, never added to the shared data, and deleted when the
+  session ends (or with **Remove my files**). No password is needed. Use this to
+  study a file without changing what others see.
+- **Demo data (synthetic)**: the made-up day with planted problems.
+
+The example questions follow the chosen data's dates.
+
+### Adding a day to the shared data
+
+1. Choose **AROL telemetry (shared, stored)** and open **Add a day to the
+   shared data**.
 2. Enter the upload password and choose the day's CSV, keeping AROL's export
    name: `telemetry_<machine>_<YYYY-MM-DD>.csv` (up to 200 MB).
-3. Click **Add to the data**. A full day took about 10 seconds on a laptop; allow up to a minute on the
-   free host. The sidebar
-   then shows the new file count and time range, and every question uses all
-   uploaded days.
+3. Click **Add to the shared data**. A full day took about 10 seconds on a
+   laptop; allow up to a minute on the free host. The sidebar then shows the
+   new file count and time range, and every question uses all stored days.
+
+Days added another way (another visitor, or `pool_store.add_csv` from a
+computer with the keys in `.env`) appear by themselves within a minute; no
+reboot is needed. **Check for new days** shows them at once.
 
 The upload is refused, with nothing changed, when the file:
 
@@ -92,7 +111,8 @@ The upload is refused, with nothing changed, when the file:
 - belongs to a different machine than the uploaded data;
 - is not valid AROL telemetry (missing columns, bad counters, unordered timestamps).
 
-Before the first upload the website shows the synthetic demo data.
+Upload attempts and their errors are written to the app's logs
+(**Manage app** on the site), lines starting `[stored upload]` or `[session upload]`.
 
 ## Testing uploads locally
 

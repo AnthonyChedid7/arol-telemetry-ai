@@ -186,3 +186,39 @@ def test_supabase_requests_and_missing_objects():
         store.read("../secrets")
     legacy = SupabaseStore("https://p.supabase.co", "eyJhbGciOi", session=_Session([]))
     assert legacy.session.headers["Authorization"] == "Bearer eyJhbGciOi"
+
+
+# --- a visitor's own files, kept only for their session -----------------------------
+
+def test_session_pool_orders_by_date_and_equals_a_full_build(tmp_path, days):
+    uploads = [(p.name, p.read_bytes()) for p in reversed(days)]  # chosen in any order
+    manifest = pool_store.build_session_pool(uploads, tmp_path / "session")
+    full = build_event_pool(days, tmp_path / "full", machine_id="M1")
+    built = json.loads(manifest.read_text())
+    assert built["summary"] == json.loads(full.read_text())["summary"]
+    assert [p["input_file"] for p in built["partitions"]] == [p.name for p in days]
+    assert not (tmp_path / "session" / "csv").exists()  # only the converted pool is kept
+
+
+def test_session_pool_refuses_mixed_or_repeated_files(tmp_path, days):
+    other = ("telemetry_M2_2026-02-04.csv", days[2].read_bytes())
+    with pytest.raises(ValueError, match="one machine"):
+        pool_store.build_session_pool([(days[0].name, days[0].read_bytes()), other], tmp_path / "s")
+    with pytest.raises(ValueError, match="twice"):
+        pool_store.build_session_pool([(days[0].name, b"x"), (days[0].name, b"x")], tmp_path / "s")
+    with pytest.raises(ValueError, match="AROL export"):
+        pool_store.build_session_pool([("notes.csv", b"x")], tmp_path / "s")
+    with pytest.raises(ValueError, match="at least one"):
+        pool_store.build_session_pool([], tmp_path / "s")
+
+
+def test_prune_folders_removes_only_old_ones(tmp_path):
+    import os
+    import time
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir(), new.mkdir()
+    stamp = time.time() - 10 * 3600
+    os.utime(old, (stamp, stamp))
+    assert pool_store.prune_folders(tmp_path, 6 * 3600) == 1
+    assert not old.exists() and new.exists()
+    assert pool_store.prune_folders(tmp_path / "missing", 1) == 0

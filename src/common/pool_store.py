@@ -22,6 +22,7 @@ import re
 import shutil
 import tempfile
 import threading
+import time
 
 from src.ingestion.event_pool import append_to_event_pool, build_event_pool
 
@@ -215,6 +216,54 @@ def add_csv(store, local_dir, csv_path, *, progress=None):
             pull(store, local_dir)
             raise
         return entry
+
+
+def build_session_pool(uploads, folder, *, progress=None):
+    """Convert browser uploads [(name, bytes)] into a throwaway pool; nothing is stored.
+
+    The files must share one machine; they are ordered by the date in their
+    AROL export names. Returns the new pool's manifest path.
+    """
+    named = []
+    for name, data in uploads:
+        safe = Path(name).name
+        match = FILENAME.match(safe)
+        if not match:
+            machine_from_filename(safe)  # raises the explanatory error
+        named.append((match["date"], safe, data, match["machine"]))
+    if not named:
+        raise ValueError("Choose at least one CSV file.")
+    if len({name for _, name, _, _ in named}) != len(named):
+        raise ValueError("The same file was chosen twice.")
+    machines = sorted({machine for *_, machine in named})
+    if len(machines) != 1:
+        raise ValueError(f"All files must be from one machine; got {', '.join(machines)}.")
+    named.sort(key=lambda item: (item[0], item[1]))
+    folder = Path(folder)
+    if folder.exists():
+        shutil.rmtree(folder)
+    inputs = folder / "csv"
+    inputs.mkdir(parents=True)
+    paths = []
+    for _, name, data, _ in named:
+        (inputs / name).write_bytes(data)
+        paths.append(inputs / name)
+    manifest = build_event_pool(paths, folder / "pool", machine_id=machines[0], progress=progress)
+    shutil.rmtree(inputs)  # keep only the converted pool
+    return manifest
+
+
+def prune_folders(root, max_age_seconds):
+    """Delete subfolders of root not modified for max_age_seconds (old session pools)."""
+    root = Path(root)
+    if not root.is_dir():
+        return 0
+    removed = 0
+    for child in root.iterdir():
+        if child.is_dir() and time.time() - child.stat().st_mtime > max_age_seconds:
+            shutil.rmtree(child, ignore_errors=True)
+            removed += 1
+    return removed
 
 
 def add_uploaded_csv(store, local_dir, name, data, *, progress=None):

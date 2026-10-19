@@ -10,12 +10,13 @@ for this browser session only.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hmac
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sys
 from uuid import uuid4
 
@@ -62,6 +63,14 @@ st.markdown(f"<style>{brand.HEADER_CSS}"
             "section[data-testid='stSidebar'] [data-testid='stAlert'] p{color:#1B2430}"
             "section[data-testid='stSidebar'] [data-testid='stAlert']{background:#F4F6F9;"
             "border-radius:.5rem}"
+            # Expander headers keep light text on the navy sidebar in every state.
+            "section[data-testid='stSidebar'] [data-testid='stExpander'] details{"
+            "background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.28)}"
+            "section[data-testid='stSidebar'] [data-testid='stExpander'] summary,"
+            "section[data-testid='stSidebar'] [data-testid='stExpander'] summary:hover{"
+            "background:transparent;color:#FFFFFF}"
+            "section[data-testid='stSidebar'] [data-testid='stExpander'] summary *{color:#FFFFFF}"
+            "section[data-testid='stSidebar'] [data-testid='stBaseButton-secondary'] p{color:#1B2430}"
             "</style>", unsafe_allow_html=True)
 st.markdown(brand.header_html(
     "Telemetry Analysis Console",
@@ -79,68 +88,148 @@ def _demo_manifest() -> str:
     return str(build())
 
 
-STORED_DIR = ROOT / "data" / "stored_pool"
+# Working copies only (the store is the record); AROL_CACHE_DIR moves them, e.g. in tests.
+CACHE_ROOT = Path(os.environ.get("AROL_CACHE_DIR") or ROOT / "data")
+STORED_DIR = CACHE_ROOT / "stored_pool"
+SESSION_ROOT = CACHE_ROOT / "session_pools"
+MAX_SESSION_FILES = 7
 store = pool_store.store_from_env()
 
 
-@st.cache_resource(show_spinner="Loading the uploaded telemetry...")
+# Re-read the store at most once a minute, so days added elsewhere (another
+# visitor or a script) appear without restarting the app.
+@st.cache_resource(ttl=60, show_spinner="Loading the stored telemetry...")
 def _stored_manifest() -> str | None:
     path = pool_store.pull(store, STORED_DIR)
     return None if path is None else str(path)
 
 
-# The manifest is selected by the operator, not by an untrusted web input:
-# AROL_MANIFEST if set, else the uploaded pool when a store is configured
-# (SUPABASE_* or AROL_STORE_DIR), else the presentation pool if present, else
-# the one local pool under data/event_pools (resolve_manifest refuses to guess
-# among several). With no pool at all (a fresh clone, the hosted demo, or an
-# empty store), or with AROL_DEMO=1, the page uses the synthetic demo pool.
+# The sources are chosen by the operator's settings, never by a web input:
+# AROL_MANIFEST (or the presentation pool, or the one local pool) on this
+# computer; the shared stored pool when a store is configured (SUPABASE_* or
+# AROL_STORE_DIR); a visitor's own files, kept only for their session; and the
+# synthetic demo pool. AROL_DEMO=1 offers only the demo.
 forced_demo = os.environ.get("AROL_DEMO", "").strip() == "1"
-use_store = store is not None and not forced_demo and not os.environ.get("AROL_MANIFEST")
+local_pools = sorted((ROOT / "data/event_pools").glob("*/manifest.json"))
+local_manifest = None if forced_demo else (os.environ.get("AROL_MANIFEST") or (
+    DEFAULT_MANIFEST if (ROOT / DEFAULT_MANIFEST).is_file() else None))
+has_local = not forced_demo and (local_manifest is not None or (store is None and bool(local_pools)))
+use_store = store is not None and not forced_demo
 stored_manifest = store_error = None
 if use_store:
     try:
         stored_manifest = _stored_manifest()
     except Exception as exc:
         store_error = f"{type(exc).__name__}: {exc}"
-uploaded_mode = stored_manifest is not None
-local_pools = sorted((ROOT / "data/event_pools").glob("*/manifest.json"))
-requested_manifest = os.environ.get("AROL_MANIFEST") or stored_manifest or (
-    DEFAULT_MANIFEST if (ROOT / DEFAULT_MANIFEST).is_file() else None)
-demo_mode = forced_demo or (use_store and not uploaded_mode) or (
-    requested_manifest is None and not local_pools)
-try:
-    manifest_path, manifest = resolve_manifest(
-        _demo_manifest() if demo_mode else requested_manifest, ROOT)
-except ValueError as exc:
-    st.error(str(exc))
-    st.info("Set AROL_MANIFEST to a complete local pool manifest "
-            "(for example data/event_pools/<pool>/manifest.json), or AROL_DEMO=1 "
-            "for the synthetic demo data, and restart.")
-    st.stop()
 
-summary = manifest["summary"]
-machine = summary["machine_id"]
+SOURCES = {}
+if has_local:
+    SOURCES["local"] = "Private event pool (this computer)"
+if use_store:
+    SOURCES["stored"] = "AROL telemetry (shared, stored)"
+if not forced_demo:
+    SOURCES["session"] = "My own CSV files (this session only)"
+SOURCES["demo"] = "Demo data (synthetic)"
+default_source = ("local" if has_local else
+                  "stored" if stored_manifest else "demo")
 
-# --- sidebar: data source, Claude key, planner --------------------------------
+if "session_id" not in st.session_state:
+    st.session_state["session_id"] = uuid4().hex
+    pool_store.prune_folders(SESSION_ROOT, 6 * 3600)  # old visitors' throwaway pools
+session_dir = SESSION_ROOT / st.session_state["session_id"]
+
 with st.sidebar:
     if brand.LOGO.is_file():
         st.image(str(brand.LOGO), width=150)
     st.markdown("### Data source")
-    source_label = ("Synthetic demo data" if demo_mode else
-                    f"Uploaded telemetry ({summary.get('files', 0)} "
-                    f"file{'' if summary.get('files') == 1 else 's'})" if uploaded_mode else
-                    "Private event pool")
-    st.markdown(
-        f"**{source_label}**  \n"
-        f"Machine `{machine}`  \n"
-        f"{(summary.get('ts_min') or '?')[:16]} to {(summary.get('ts_max') or '?')[:16]} UTC  \n"
-        f"{summary.get('observed_events', 0):,} observed events, {summary.get('heads', '?')} heads")
+    source_keys = list(SOURCES)
+    source = st.radio("Data to analyse", source_keys, format_func=SOURCES.get,
+                      index=source_keys.index(default_source), key="data_source")
+
+demo_mode = source == "demo"
+uploaded_mode = source == "stored"
+session_mode = source == "session"
+missing_reason = None
+if source == "demo":
+    requested = _demo_manifest()
+elif source == "stored":
+    requested = stored_manifest
     if store_error:
-        st.error(f"The stored telemetry could not be loaded, so demo data is shown. {store_error}")
-    if use_store:
+        missing_reason = f"The stored telemetry could not be loaded. {store_error}"
+    elif requested is None:
+        missing_reason = ("No AROL telemetry is stored yet. Add the first day under "
+                          "'Add a day to the shared data' in the sidebar.")
+elif source == "session":
+    requested = st.session_state.get("session_manifest")
+    if not requested or not Path(requested).is_file():
+        requested = None
+        missing_reason = ("Choose one or more daily CSV files under 'Your files' in the sidebar "
+                          "and click 'Analyse these files'. They are converted for this browser "
+                          "session only and are not saved.")
+else:
+    requested = local_manifest
+
+manifest_path = manifest = None
+if missing_reason is None:
+    try:
+        manifest_path, manifest = resolve_manifest(requested, ROOT)
+    except ValueError as exc:
+        missing_reason = str(exc)
+        if source == "local":
+            missing_reason += (" Set AROL_MANIFEST to a complete local pool manifest "
+                               "(for example data/event_pools/<pool>/manifest.json) and restart.")
+
+summary = manifest["summary"] if manifest else {}
+machine = summary.get("machine_id")
+
+with st.sidebar:
+    if manifest:
+        files = summary.get("files", 0)
+        st.markdown(
+            f"Machine `{machine}`  \n"
+            f"{(summary.get('ts_min') or '?')[:16]} to {(summary.get('ts_max') or '?')[:16]} UTC  \n"
+            f"{files} file{'' if files == 1 else 's'}, "
+            f"{summary.get('observed_events', 0):,} observed events, {summary.get('heads', '?')} heads")
+    if session_mode:
+        st.markdown("**Your files**")
+        notice = st.session_state.pop("session_notice", None)
+        if notice:
+            st.success(notice)
+        st.caption("Up to 7 daily CSVs of one machine (AROL export names). They are "
+                   "converted on this server, visible only to you, and deleted when "
+                   "the session ends. Nothing is added to the shared data.")
+        round_ = st.session_state.get("session_round", 0)
+        session_files = st.file_uploader("Daily telemetry CSV files", type=["csv"],
+                                  accept_multiple_files=True, key=f"session_files_{round_}")
+        if st.button("Analyse these files", disabled=not session_files, type="primary"):
+            if len(session_files) > MAX_SESSION_FILES:
+                st.error(f"Choose at most {MAX_SESSION_FILES} files at a time.")
+            else:
+                try:
+                    with st.spinner(f"Checking and converting {len(session_files)} file(s)..."):
+                        built = pool_store.build_session_pool(
+                            [(f.name, f.getvalue()) for f in session_files], session_dir)
+                except Exception as exc:
+                    print(f"[session upload] failed: {type(exc).__name__}: {exc}", flush=True)
+                    st.error(f"These files could not be used. {exc}")
+                else:
+                    st.session_state["session_manifest"] = str(built)
+                    st.session_state["session_round"] = round_ + 1
+                    st.session_state["session_notice"] = (
+                        f"Loaded {len(session_files)} file(s) for this session.")
+                    print(f"[session upload] loaded {len(session_files)} file(s)", flush=True)
+                    st.rerun()
+        if st.session_state.get("session_manifest"):
+            if st.button("Remove my files"):
+                shutil.rmtree(session_dir, ignore_errors=True)
+                st.session_state.pop("session_manifest", None)
+                st.rerun()
+    if uploaded_mode:
+        if st.button("Check for new days", help="Stored data refreshes by itself every minute."):
+            _stored_manifest.clear()
+            st.rerun()
         upload_password = os.environ.get("AROL_UPLOAD_PASSWORD", "")
-        with st.expander("Add a day of telemetry (CSV)"):
+        with st.expander("Add a day to the shared data", expanded=stored_manifest is None):
             notice = st.session_state.pop("upload_notice", None)
             if notice:
                 st.success(notice)
@@ -148,14 +237,16 @@ with st.sidebar:
                 st.caption("Uploads are switched off. Set AROL_UPLOAD_PASSWORD in the app's "
                            "secrets to allow them.")
             else:
-                st.caption(f"Each file is checked, converted and kept in {store.describe()}. "
-                           "Use the AROL export name (telemetry_<machine>_<YYYY-MM-DD>.csv) "
-                           "and add days in date order.")
+                st.caption(f"Each file is checked, converted and kept in {store.describe()} "
+                           "for everyone using this site. Use the AROL export name "
+                           "(telemetry_<machine>_<YYYY-MM-DD>.csv) and add days in date order. "
+                           "To study a file without saving it, choose 'My own CSV files' above.")
                 entered = st.text_input("Upload password", type="password", key="upload_password")
                 round_ = st.session_state.get("upload_round", 0)
                 upload = st.file_uploader("Daily telemetry CSV", type=["csv"], key=f"upload_{round_}")
-                if st.button("Add to the data", disabled=upload is None):
+                if st.button("Add to the shared data", disabled=upload is None):
                     if not hmac.compare_digest(entered.encode(), upload_password.encode()):
+                        print("[stored upload] refused: wrong password", flush=True)
                         st.error("Wrong upload password.")
                     else:
                         try:
@@ -163,8 +254,11 @@ with st.sidebar:
                                 entry = pool_store.add_uploaded_csv(
                                     store, STORED_DIR, upload.name, upload.getvalue())
                         except Exception as exc:
+                            print(f"[stored upload] {upload.name} failed: "
+                                  f"{type(exc).__name__}: {exc}", flush=True)
                             st.error(f"Not added. {exc}")
                         else:
+                            print(f"[stored upload] added {entry['input_file']}", flush=True)
                             _stored_manifest.clear()
                             st.session_state["upload_round"] = round_ + 1
                             span = (f"{entry['ts_min'][:16]} to {entry['ts_max'][:16]} UTC"
@@ -203,6 +297,7 @@ with st.sidebar:
         "Question understanding", planner_labels,
         index=next((i for i, label in enumerate(planner_labels)
                     if PLANNERS[label] == default_planner), 1),
+        key="planner",
     )
     planner_kind = PLANNERS[planner_label]
     if planner_kind == "claude":
@@ -215,6 +310,9 @@ with st.sidebar:
     st.caption(brand.DISCLAIMER)
 
 # --- main: data banner and question ------------------------------------------
+if manifest is None:
+    st.info(missing_reason)
+    st.stop()
 if demo_mode:
     st.warning(
         "**Demo data.** This page is running on a synthetic, made-up dataset "
@@ -222,28 +320,48 @@ if demo_mode:
         "find: head 7 is weak (about 3% rejects), head 12 drifts upward 08:00-12:00, "
         "head 3 has three over-limit closures, and 01:00-01:30 the machine runs "
         "without caps. Try the examples below.")
-    if use_store and not store_error:
-        st.info("No AROL telemetry has been uploaded yet. Add a daily CSV under "
-                "'Add a day of telemetry' in the sidebar.")
+elif session_mode:
+    st.info("**Your files.** Only you see this data, and it is deleted when your session "
+            "ends. Switch the data source in the sidebar to go back to the shared data.")
+
+
+def _example_day(summary: dict) -> datetime:
+    """A midnight inside the data with 12 h after it, for the example questions."""
+    first = datetime.fromisoformat(summary["ts_min"])
+    last = datetime.fromisoformat(summary["ts_max"])
+    day = first.replace(hour=0, minute=0, second=0, microsecond=0)
+    if day < first:
+        day += timedelta(days=1)
+    if day + timedelta(hours=12) > last:
+        day = first.replace(minute=0, second=0, microsecond=0)
+    return day
+
+
+day = _example_day(summary) if summary.get("ts_min") else datetime(2026, 2, 1)
+
+
+def _at(hours: int) -> str:
+    return (day + timedelta(hours=hours)).isoformat()
+
+
+# A whole real day can exceed the analysis event limit; the demo day stays below it.
+on_day = f"on {day.date().isoformat()}" if demo_mode else f"from {_at(0)} until {_at(12)}"
 st.caption(f"Selected machine: {machine} | Head diagnostic and scoped analytics (registered tools)")
 if planner_kind == "claude":
-    st.info("Ask in your own words, for example: 'which head performs worst on Feb 1?' "
-            "or 'is spindle 12 drifting in the morning?'. Check the 'Interpreted as' line.")
+    st.info(f"Ask in your own words, for example: 'which head performs worst on "
+            f"{day:%b} {day.day}?' or 'is spindle 12 drifting in the morning?'. "
+            "Check the 'Interpreted as' line.")
 else:
     st.info("For a head diagnostic, give a bounded time window in your question. "
             "The selected machine above will be used if you do not name one.")
 
-window = (
-    f"for machine {machine} from 2026-02-01T00:00:00 "
-    "until 2026-02-01T12:00:00"
-)
+window = f"for machine {machine} from {_at(0)} until {_at(12)}"
+hint = (lambda text: f" ({text})") if demo_mode else (lambda text: "")
 examples = {
     "Write my own question": "",
     "Head 4 diagnostic — ask for window": "Is there any problem with head 4?",
     "Head 4 diagnostic — sample hour": (
-        "Is there any problem with head 4 from 2026-02-01T00:00:00 "
-        "until 2026-02-01T01:00:00?"
-    ),
+        f"Is there any problem with head 4 from {_at(0)} until {_at(1)}?"),
     "Torque summary and distribution": (
         "Summarize torque and show its distribution with 10 bins "
         f"{window} for head 5 for successful closures"
@@ -251,17 +369,16 @@ examples = {
     "Head 5 success rate": f"Success rate for head 5 {window}",
     "Failure rate for each head — full pool": "show me the failure rate for each head",
     "Head 5 evidence check": f"Is anything wrong with head 5 {window}",
-    "Rank heads by success (demo: head 7 is weak)": (
-        f"Rank heads by cap-present success rate for machine {machine} on 2026-02-01"),
+    "Rank heads by success" + hint("demo: head 7 is weak"): (
+        f"Rank heads by cap-present success rate for machine {machine} {on_day}"),
     "Head 7 versus its peers": (
-        f"Compare head 7 with peers by cap-present success rate for machine {machine} on 2026-02-01"),
-    "Torque trend for head 12 (demo: drift)": (
-        f"Show torque trend for head 12 for machine {machine} "
-        "from 2026-02-01T06:00:00 until 2026-02-01T12:00:00"),
+        f"Compare head 7 with peers by cap-present success rate for machine {machine} {on_day}"),
+    "Torque trend for head 12" + hint("demo: drift"): (
+        f"Show torque trend for head 12 for machine {machine} from {_at(6)} until {_at(12)}"),
     "Torque anomalies for head 3": (
-        f"Find torque anomalies for head 3 for machine {machine} on 2026-02-01"),
+        f"Find torque anomalies for head 3 for machine {machine} {on_day}"),
     "Machine idle periods": (
-        f"Machine idle for machine {machine} from 2026-02-01T00:00:00 until 2026-02-01T06:00:00"),
+        f"Machine idle for machine {machine} from {_at(0)} until {_at(6)}"),
 }
 
 st.markdown("#### Ask a question")
@@ -276,7 +393,7 @@ question = st.text_area(
 
 # Streamlit reruns when inputs change. Keep a displayed answer tied to the
 # exact question and planner that produced it, including before Analyze is clicked.
-request_key = (planner_kind, question.strip())
+request_key = (planner_kind, question.strip(), str(manifest_path))
 if st.session_state.get("result_request") != request_key:
     st.session_state.pop("result", None)
 
