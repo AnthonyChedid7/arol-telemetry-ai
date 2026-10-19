@@ -11,8 +11,7 @@ recorded by an import hook (install_import_stamps) just before the module's
 code is read. Files rewritten while a run is in progress (a deploy pulls them
 one by one) are therefore still detected on the next run; a stamp recorded
 after the run would wrongly mark them current. Modules imported before the
-hook fall back to the source stamp in their bytecode cache, then to stamps
-remembered in `seen` the first time they were observed.
+hook fall back to stamps remembered in `seen` the first time they were observed.
 """
 from __future__ import annotations
 
@@ -89,22 +88,13 @@ def _stamp(module):
 
 
 def _imported_version(module):
-    """(mtime, size) of the source as it was when this module was imported, if known."""
-    stamped = getattr(module, STAMP, None)
-    if stamped is not None:
-        return stamped
-    cached = getattr(module, "__cached__", None)
-    if not cached:
-        return None
-    try:
-        with open(cached, "rb") as stream:
-            header = stream.read(16)
-    except OSError:
-        return None
-    # PEP 552 header: magic, flags, then source mtime and size for timestamp pycs.
-    if len(header) < 16 or int.from_bytes(header[4:8], "little") != 0:
-        return None
-    return int.from_bytes(header[8:12], "little"), int.from_bytes(header[12:16], "little")
+    """(mtime, size) of the source when this module was imported, if the hook saw it.
+
+    Bytecode-cache headers are deliberately not used: when bytecode writing is
+    off, an outdated .pyc stays on disk although the module loaded fresh from
+    source, which would look stale and reload every module on every run.
+    """
+    return getattr(module, STAMP, None)
 
 
 def _current_version(module):
