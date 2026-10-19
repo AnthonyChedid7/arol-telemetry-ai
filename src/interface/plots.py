@@ -118,16 +118,17 @@ def _head_failures(data, meta, target):
     return _finish(ax, "Cap-present failure rate (rejection flags) by head", "Failure (%)", target)
 
 
-def _daily(data, meta, target, failure=False):
-    """Top: each day's lowest-success (or highest-failure) head. Bottom: every head x day."""
+def _daily(data, meta, target, focus="", extreme=""):
+    """Top: each day's asked-for head (e.g. lowest success, lowest failure). Bottom: every head x day."""
     days = data.get("days", [])
     if not days:
         return None
     import numpy as np
+    from ..analytics.registered_daily_kpi import daily_view
 
-    rate = "reject_rate_cap_present" if failure else "success_rate_cap_present"
-    pick = "highest_failure_head" if failure else "lowest_success_head"
-    ties = "n_tied_highest_failure" if failure else "n_tied_lowest_success"
+    asked, _ = daily_view(focus, extreme)
+    rate, key = asked["rate"], asked["key"]
+    failure = rate.startswith("reject")
     labels = [d["date"][5:] for d in days]
     heads = sorted({h["head_id"] for d in days for h in d["heads"]})
     grid = np.full((len(heads), len(days)), np.nan)
@@ -138,27 +139,35 @@ def _daily(data, meta, target, failure=False):
     fig, (top, bottom) = plt.subplots(
         2, 1, figsize=(max(9, 0.45 * len(days) + 3), 4.2 + 0.17 * len(heads)),
         gridspec_kw={"height_ratios": [1, max(1.6, 0.06 * len(heads))]})
-    values = [100 * d[pick][rate] if d[pick] else np.nan for d in days]
-    bars = top.bar(range(len(days)), values, color="#F28C28" if failure else "#16365C")
-    for bar, day in zip(bars, days):
-        if day["partial_day"]:
-            bar.set_hatch("//")
-            bar.set_alpha(0.6)
-        if day[pick]:
-            text = ("all tied" if day[ties] == day["n_eligible_heads"]
-                    else day[pick]["head_id"] + ("*" if day[ties] > 1 else ""))
-            top.annotate(text, (bar.get_x() + bar.get_width() / 2, bar.get_height()),
-                         ha="center", va="bottom", fontsize=7, rotation=90 if len(days) > 14 else 0)
-    finite = [v for v in values if v == v]
+    picks = [d[f"{key}_head"] for d in days]
+    values = [100 * p[rate] if p else np.nan for p in picks]
+    bars = top.bar(range(len(days)), values, color="#F28C28" if failure else "#16365C",
+                   label=f"{asked['label']} head")
+    # The whole machine that day, so the panel shows the level even when the
+    # picked head sits at 0% (a common answer for "lowest failure").
+    overall = [100 * d[rate] if d.get(rate) is not None else np.nan for d in days]
+    top.plot(range(len(days)), overall, color="#1B2430", marker="o", linewidth=1.2, label="All heads")
+    top.legend(loc="upper left", fontsize=8, frameon=False)
+    finite = [v for v in values + overall if v == v]
     if finite and not failure:
         low = min(finite)
         top.set_ylim(max(0, low - (100 - low) * 0.6 - 0.001), 100 + (100 - low) * 0.25 + 0.001)
     elif finite:
         top.set_ylim(0, max(max(finite) * 1.3, 0.01))
+    for bar, day, head in zip(bars, days, picks):
+        if day["partial_day"]:
+            bar.set_hatch("//")
+            bar.set_alpha(0.6)
+        if head:
+            tied = day[f"{key}_tied_heads"]
+            text = ("all tied" if len(tied) == day["n_eligible_heads"]
+                    else f"{len(tied)} tied" if len(tied) > 1 else head["head_id"])
+            top.annotate(text, (bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                         ha="center", va="bottom", fontsize=7, rotation=90 if len(days) > 14 else 0)
     top.set_xticks(range(len(days)), labels, rotation=90 if len(days) > 14 else 0, fontsize=8)
     top.set_ylabel("Failure (%)" if failure else "Success (%)")
-    top.set_title(("Highest-failure head each day" if failure else "Lowest-success head each day")
-                  + "  (hatched = partial day, * = tie)", loc="left", fontsize=10)
+    top.set_title(f"{asked['label']} head each day  (hatched = partial day; "
+                  "'N tied' = N heads share that rate)", loc="left", fontsize=10)
     top.grid(axis="y", alpha=0.2)
     image = bottom.imshow(grid, aspect="auto", interpolation="nearest",
                           cmap="Oranges" if failure else "Blues_r")
@@ -177,7 +186,7 @@ def _daily(data, meta, target, failure=False):
 
 
 def _daily_failures(data, meta, target):
-    return _daily(data, meta, target, failure=True)
+    return _daily(data, meta, target, focus="failure")
 
 
 # Tool -> (output file stem, plotter) when the question asks about failures.
@@ -225,11 +234,12 @@ PLOTTERS = {"torque_distribution": _histogram, "torque_trend": _trend,
             "head_success_by_day": _daily}
 
 
-def render(results, out_dir, focus=""):
+def render(results, out_dir, focus="", extreme=""):
     """Return (tool name, PNG path) for every plot with actual observations.
 
     focus="failure" draws the failure rate instead of the success rate where a
-    tool supports both views (see FAILURE_PLOTTERS).
+    tool supports both views (see FAILURE_PLOTTERS); extreme="best" shows the
+    best end (lowest failure / highest success) of the per-day head chart.
     """
     output = Path(out_dir)
     made = []
@@ -238,7 +248,11 @@ def render(results, out_dir, focus=""):
             output.mkdir(parents=True, exist_ok=True)
             stem, plotter = (FAILURE_PLOTTERS[name] if focus == "failure" and name in FAILURE_PLOTTERS
                              else (name, PLOTTERS[name]))
-            path = plotter(reply["result"], reply.get("meta"), output / f"{stem}.png")
+            if name == "head_success_by_day":
+                path = _daily(reply["result"], reply.get("meta"), output / f"{stem}.png",
+                              focus=focus, extreme=extreme)
+            else:
+                path = plotter(reply["result"], reply.get("meta"), output / f"{stem}.png")
             if path is not None:
                 made.append((name, path))
     return made

@@ -120,9 +120,10 @@ def test_whole_pool_runs_day_by_day_without_loading_events(pool, tmp_path):
     assert answer['pool_meta']['materialization'].startswith('aggregated lazily')
     findings = answer['markdown'].split('## 4. Findings', 1)[1].split('## 5.', 1)[0]
     # The pool's first reading is the counter baseline, so the first event is 12:10.
-    assert '| 2026-02-01 | 12:10-23:50 (partial) | 213 | H01 | **87.3239%** |' in findings
-    assert '| 2026-02-02 | 00:00-23:50 | 432 | H02 | **95.8333%** |' in findings
-    assert '| 2026-02-03 | 00:00-12:00 (partial) | 219 | all 3 heads tied |' in findings
+    # Columns: day, coverage, cap-present, all heads together, then the asked-for head.
+    assert '| 2026-02-01 | 12:10-23:50 (partial) | 213 | 95.3052% | H01 | **87.3239%** |' in findings
+    assert '| 2026-02-02 | 00:00-23:50 | 432 | 98.6111% | H02 | **95.8333%** |' in findings
+    assert '| 2026-02-03 | 00:00-12:00 (partial) | 219 | 100.0000% | all 3 heads tied |' in findings
     assert 'Lowest success head | Success rate | Highest failure head' in findings
     figures = key_figures(answer['results'])
     assert figures[0] == dict(label='Days analysed', value='3', note='2 partial', tone='neutral')
@@ -131,3 +132,41 @@ def test_whole_pool_runs_day_by_day_without_loading_events(pool, tmp_path):
     assert 'Highest failure head | Failure rate | Lowest success head' in failure['markdown']
     assert [p.name for _, p in plots.render(failure['results'], tmp_path / 'b', focus='failure')] == [
         'head_failure_by_day.png']
+
+
+@pytest.mark.parametrize('question, focus, extreme', [
+    ('give me the lowest error rates on each day of the six days calendar please', 'failure', 'best'),
+    ('which head has the lowest success rate for each day', '', 'worst'),
+    ('highest success rate per head each day', '', 'best'),
+    ('which head has the most errors each day', 'failure', 'worst'),
+    ('best head each day', '', 'best'),
+    ('give me the error rate of all heads for each day', 'failure', 'worst'),
+])
+def test_direction_is_read_from_the_question(question, focus, extreme):
+    from src.agent.report import rate_extreme, rate_focus
+    assert (rate_focus(question), rate_extreme(question, rate_focus(question))) == (focus, extreme)
+    plan = RulePlanner().plan(question, {})
+    assert [name for name, _ in plan.calls] == ['head_success_by_day']
+
+
+def test_best_direction_lists_ties_and_heads_best_every_day(pool, tmp_path):
+    from src.interface import plots
+    from src.interface.dashboard import key_figures
+    cfg = {**CFG, 'data': {'source': 'person_a_pool', 'person_a': {'p': str(pool)}}}
+    answer = Orchestrator(cfg=cfg).answer('lowest failure rate per head for each day')
+    plan = answer['plan']
+    assert (plan.focus, plan.extreme) == ('failure', 'best')
+    assert 'Shown: the lowest failure head(s) of each day' in plan.interpretation
+    findings = answer['markdown'].split('## 4. Findings', 1)[1].split('## 5.', 1)[0]
+    assert '| All heads: failure rate | Lowest failure head | Failure rate | Highest success head |' in findings
+    assert '| 2026-02-01 | 12:10-23:50 (partial) | 213 | 4.6948% | H03 | **0.0000%** |' in findings
+    assert '| 2026-02-02 | 00:00-23:50 | 432 | 1.3889% | 2 tied: H01, H03 | **0.0000%** |' in findings
+    assert 'Heads with the lowest failure rate on every one of these days: H03 (1).' in findings
+    assert 'Across these days' not in findings  # every day is 0%: nothing to add
+    figures = key_figures(answer['results'], focus=plan.focus, extreme=plan.extreme)
+    assert figures[1] == dict(label='Lowest failure each day', value='0.000%',
+                              note='shared by 1-3 heads', tone='ok')
+    # Feb 3 (all heads tied) does not count towards "most often".
+    assert figures[2]['value'] == 'H03' and figures[2]['note'] == '2 of 2 days'
+    made = plots.render(answer['results'], tmp_path, focus=plan.focus, extreme=plan.extreme)
+    assert [p.name for _, p in made] == ['head_failure_by_day.png']

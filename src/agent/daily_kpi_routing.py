@@ -19,9 +19,17 @@ def _iso(value):
     return parsed.isoformat() if parsed.tzinfo is None else None
 
 
+RATE = re.compile(r'\b(?:success(?:ful)?|fail(?:s|ed|ing|ures?)?|reject(?:s|ed|ions?)?|errors?)\b', re.I)
+EXTREME = re.compile(r'\b(?:lowest|highest|best|worst|weakest|least|most|fewest|minimum|maximum|top)\b', re.I)
+
+
 def parse_daily_kpi_request(query):
     text = ' '.join((query or '').split()).rstrip('.?!')
-    if not (DAY.search(text) and HEADS.search(text) and METRIC.search(text)):
+    # Heads named, or a rate asked for at one end ("the lowest error rates on each
+    # day"). Plain "success rate by day for machine M1 ..." stays with the
+    # explicit hourly/daily KPI grammar.
+    if not DAY.search(text) or not ((HEADS.search(text) and METRIC.search(text))
+                                    or (RATE.search(text) and EXTREME.search(text))):
         return None
     # One named head or an hourly breakdown is a different question.
     if re.search(r'\b(?:head|spindle|h)\s*\d+\b', text, re.I) or re.search(r'\bhour', text, re.I):
@@ -42,10 +50,9 @@ def parse_daily_kpi_request(query):
     scope = (f"from {params['start']} until {params['end']}" if 'start' in params
              else 'every day in the data')
     return dict(goal=('Report, for each calendar day, every head\'s cap-present success and failure '
-                      'rate and the day\'s lowest-success and highest-failure head.'),
+                      'rate and the day\'s best and worst heads.'),
                 calls=[('head_success_by_day', dict(params))], filters=dict(params),
                 rationale='per-day head question; each day is analysed with its own query',
                 interpretation=(f'Each calendar day ({scope}; UTC days, 00:00-24:00) is analysed '
-                                'separately: per-head cap-present success and failure rates, and the '
-                                "day's lowest-success and highest-failure head."),
+                                'separately: per-head cap-present success and failure (error) rates.'),
                 focus=focus)

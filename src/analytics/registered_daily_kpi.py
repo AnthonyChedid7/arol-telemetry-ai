@@ -27,10 +27,49 @@ def _head(row):
     return {key: row[key] for key in HEAD_FIELDS}
 
 
-def _highest_failure(eligible):
-    # Exact ratios, like the success ranking; ties go to the lower head id.
-    return min(eligible, key=lambda r: (-Fraction(r['n_reject_cap_present'], r['n_cap_present']),
-                                        r['head_id']))
+# The four per-day picks: (result key, count field, exact rate, pick the maximum?).
+PICKS = (
+    ('lowest_success', 'n_success_cap_present', False),
+    ('highest_success', 'n_success_cap_present', True),
+    ('lowest_failure', 'n_reject_cap_present', False),
+    ('highest_failure', 'n_reject_cap_present', True),
+)
+
+
+def _pick(key, rate, count, label):
+    return dict(key=key, rate=rate, count=count, label=label)
+
+
+_SUCCESS = ('success_rate_cap_present', 'n_success_cap_present')
+_FAILURE = ('reject_rate_cap_present', 'n_reject_cap_present')
+# (focus, extreme) -> the pick the question asked for, then its counterpart.
+VIEWS = {
+    ('', 'worst'): (_pick('lowest_success', *_SUCCESS, 'Lowest success'),
+                    _pick('highest_failure', *_FAILURE, 'Highest failure')),
+    ('', 'best'): (_pick('highest_success', *_SUCCESS, 'Highest success'),
+                   _pick('lowest_failure', *_FAILURE, 'Lowest failure')),
+    ('failure', 'worst'): (_pick('highest_failure', *_FAILURE, 'Highest failure'),
+                           _pick('lowest_success', *_SUCCESS, 'Lowest success')),
+    ('failure', 'best'): (_pick('lowest_failure', *_FAILURE, 'Lowest failure'),
+                          _pick('highest_success', *_SUCCESS, 'Highest success')),
+}
+
+
+def daily_view(focus='', extreme=''):
+    """(asked pick, counterpart) for presenting head_success_by_day."""
+    return VIEWS[('failure' if focus == 'failure' else '', 'best' if extreme == 'best' else 'worst')]
+
+
+def _extreme(eligible, count, highest):
+    """The head with the lowest/highest exact rate and every head sharing that rate.
+
+    Exact ratios, like the success ranking; the reported head is the lowest
+    head id among the tied ones.
+    """
+    rate = {r['head_id']: Fraction(r[count], r['n_cap_present']) for r in eligible}
+    target = (max if highest else min)(rate.values())
+    tied = sorted(head for head, value in rate.items() if value == target)
+    return next(r for r in eligible if r['head_id'] == tied[0]), tied
 
 
 def _run(events, *, machine_id=None, start=None, end=None):
@@ -61,22 +100,26 @@ def _run(events, *, machine_id=None, start=None, end=None):
         n_cap = sum(r['n_cap_present'] for r in ranked)
         n_cap_total += n_cap
         covered = (last - first).total_seconds() / 3600
-        ties_low = sum(r['rank_lowest_success_first'] == 1 for r in eligible)
-        worst_failure = (Fraction(_highest_failure(eligible)['n_reject_cap_present'],
-                                  _highest_failure(eligible)['n_cap_present']) if eligible else None)
-        ties_fail = sum(Fraction(r['n_reject_cap_present'], r['n_cap_present']) == worst_failure
-                        for r in eligible)
+        picks = {}
+        for key, count, highest in PICKS:
+            head, tied = _extreme(eligible, count, highest) if len(eligible) >= 2 else (None, [])
+            # How many eligible heads share that value (all of them = no difference that day).
+            picks.update({f'{key}_head': _head(head) if head else None,
+                          f'n_tied_{key}': len(tied), f'{key}_tied_heads': tied})
+        n_success = sum(r['n_success_cap_present'] for r in ranked)
+        n_reject = sum(r['n_reject_cap_present'] for r in ranked)
         out.append(dict(
             date=day.isoformat(), start=lo.isoformat(), end=hi.isoformat(),
             first_event=first.isoformat(), last_event=last.isoformat(),
             covered_hours=round(covered, 2), partial_day=covered < 23,
             n_observed=sum(r['n_observed'] for r in ranked), n_cap_present=n_cap,
+            # The whole machine that day (all heads together), same definitions.
+            n_success_cap_present=n_success, n_reject_cap_present=n_reject,
+            success_rate_cap_present=n_success / n_cap if n_cap else None,
+            reject_rate_cap_present=n_reject / n_cap if n_cap else None,
             n_heads=len(ranked), n_eligible_heads=len(eligible),
             ranking_available=len(eligible) >= 2,
-            lowest_success_head=_head(eligible[0]) if len(eligible) >= 2 else None,
-            highest_failure_head=_head(_highest_failure(eligible)) if len(eligible) >= 2 else None,
-            # How many eligible heads share that value (all of them = no difference that day).
-            n_tied_lowest_success=ties_low, n_tied_highest_failure=ties_fail,
+            **picks,
             heads=[_head(r) for r in sorted(ranked, key=lambda r: r['head_id'])],
         ))
     result = dict(
@@ -98,9 +141,10 @@ def _run(events, *, machine_id=None, start=None, end=None):
 
 @tool(name='head_success_by_day',
       description=('For EACH calendar day in the selected scope (the whole data if no start/end): every '
-                   "head's cap-present success and failure (rejection) rate, and that day's lowest-success "
-                   'and highest-failure head. Use for "worst head each day", "lowest success rate per head '
-                   'for each day", "daily head ranking". One machine; days are computed one at a time.'),
+                   "head's cap-present success and failure (rejection/error) rate, and that day's lowest- and "
+                   'highest-success and lowest- and highest-failure heads with ties. Use for "worst/best head '
+                   'each day", "lowest success rate per head for each day", "lowest error rate each day", '
+                   '"daily head ranking". One machine; days are computed one at a time.'),
       params=PARAMS, agent='kpi', owner='integration')
 def head_success_by_day(events, *, machine_id=None, start=None, end=None):
     return _run(events, machine_id=machine_id, start=start, end=end)

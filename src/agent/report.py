@@ -30,6 +30,29 @@ def _pct(value, digits=2):
 FAILURE = "failure"
 _FAILURE_WORDS = re.compile(r"\b(?:fail(?:s|ed|ing|ures?)?|reject(?:s|ed|ions?)?|defect(?:s|ive)?|errors?)\b", re.I)
 _SUCCESS_WORDS = re.compile(r"\bsuccess", re.I)
+BEST, WORST = "best", "worst"
+_LOW_WORDS = re.compile(r"\b(?:lowest|least|fewest|minimum|min|smallest|lower|fewer)\b", re.I)
+_HIGH_WORDS = re.compile(r"\b(?:highest|most|maximum|max|largest|greatest|higher|top)\b", re.I)
+
+
+def rate_extreme(query: str, focus: str = "") -> str:
+    """'best' or 'worst': which end of a per-head ranking the question asks for.
+
+    Lowest failure or highest success is the best end; lowest success or
+    highest failure the worst. "best"/"worst" said outright win. Mixed or no
+    wording keeps the worst end, the usual quality question.
+    """
+    text = query or ""
+    if re.search(r"\bbest\b", text, re.I) and not re.search(r"\b(?:worst|weakest)\b", text, re.I):
+        return BEST
+    if re.search(r"\b(?:worst|weakest)\b", text, re.I):
+        return WORST
+    low, high = bool(_LOW_WORDS.search(text)), bool(_HIGH_WORDS.search(text))
+    if low == high:
+        return WORST
+    return BEST if (low if focus == FAILURE else high) else WORST
+
+
 # Tools whose findings, key figures and chart can lead with the failure rate.
 FOCUS_AWARE = frozenset({"success_rate", "success_rate_per_head", "head_success_by_day"})
 
@@ -99,17 +122,27 @@ def _finding_success_rate_per_head(result, meta, focus=""):
     return lines
 
 
-def _day_pick(day, key, rate_key, ties_key):
-    head = day[key]
+def _tied_names(tied, limit=4):
+    return ", ".join(tied[:limit]) + (f" +{len(tied) - limit} more" if len(tied) > limit else "")
+
+
+def _day_pick(day, pick):
+    """(head text, rate text) for one day's pick, stating ties instead of hiding them."""
+    head = day[f"{pick['key']}_head"]
     if head is None:
         return "not ranked (fewer than two eligible heads)", "n/a"
-    ties = day[ties_key]
-    if ties == day["n_eligible_heads"]:
-        return f"all {ties} heads tied", _pct(head[rate_key], 4)
-    return (head["head_id"] + (f" (+{ties - 1} tied)" if ties > 1 else "")), f"**{_pct(head[rate_key], 4)}**"
+    tied = day[f"{pick['key']}_tied_heads"]
+    value = _pct(head[pick["rate"]], 4)
+    if len(tied) == day["n_eligible_heads"]:
+        return f"all {len(tied)} heads tied", value
+    if len(tied) > 1:
+        return f"{len(tied)} tied: {_tied_names(tied)}", f"**{value}**"
+    return head["head_id"], f"**{value}**"
 
 
-def _finding_head_success_by_day(result, meta, focus=""):
+def _finding_head_success_by_day(result, meta, focus="", extreme=""):
+    from ..analytics.registered_daily_kpi import daily_view
+
     days = result["days"]
     lines = [f"- {result['n_days']} calendar day(s) for machine {result['machine_id']}, each analysed "
              f"separately ({result['day_definition']}).",
@@ -118,37 +151,47 @@ def _finding_head_success_by_day(result, meta, focus=""):
              "failure = rejection flags among the same events."]
     if not days:
         return lines + ["- No observed events matched; no days are available."]
-    failure_first = focus == FAILURE
-    header = (["Day", "Data covered", "Cap-present", "Highest failure head", "Failure rate",
-               "Lowest success head", "Success rate"] if failure_first else
-              ["Day", "Data covered", "Cap-present", "Lowest success head", "Success rate",
-               "Highest failure head", "Failure rate"])
-    lines += ["", "| " + " | ".join(header) + " |", "|---|---|---:|---|---:|---|---:|"]
+    asked, other = daily_view(focus, extreme)
+    rate_name = lambda pick: "Failure rate" if pick["rate"].startswith("reject") else "Success rate"
+    header = ["Day", "Data covered", "Cap-present", f"All heads: {rate_name(asked).lower()}",
+              f"{asked['label']} head", rate_name(asked), f"{other['label']} head", rate_name(other)]
+    lines += ["", "| " + " | ".join(header) + " |", "|---|---|---:|---:|---|---:|---|---:|"]
     for day in days:
         covered = f"{day['first_event'][11:16]}-{day['last_event'][11:16]}" + (
             " (partial)" if day["partial_day"] else "")
-        low = _day_pick(day, "lowest_success_head", "success_rate_cap_present", "n_tied_lowest_success")
-        high = _day_pick(day, "highest_failure_head", "reject_rate_cap_present", "n_tied_highest_failure")
-        picks = [*high, *low] if failure_first else [*low, *high]
-        lines.append(f"| {day['date']} | {covered} | {day['n_cap_present']:,} | " + " | ".join(picks) + " |")
-    ranked = [d for d in days if d["lowest_success_head"] and d["n_tied_lowest_success"] < d["n_eligible_heads"]]
-    if ranked:
-        key, rate = (("highest_failure_head", "reject_rate_cap_present") if failure_first
-                     else ("lowest_success_head", "success_rate_cap_present"))
-        pick = (max if failure_first else min)(ranked, key=lambda d: d[key][rate])
-        word = "highest failure" if failure_first else "lowest success"
-        lines += ["", f"- Across these days the {word} rate was {pick[key]['head_id']} on {pick['date']}: "
-                      f"{_pct(pick[key][rate], 4)} ({pick[key]['n_reject_cap_present' if failure_first else 'n_success_cap_present']:,}"
-                      f"/{pick[key]['n_cap_present']:,})."]
+        cells = [*_day_pick(day, asked), *_day_pick(day, other)]
+        overall = _pct(day.get(asked["rate"]), 4)
+        lines.append(f"| {day['date']} | {covered} | {day['n_cap_present']:,} | {overall} | "
+                     + " | ".join(cells) + " |")
+    key, rate, count = asked["key"], asked["rate"], asked["count"]
+    word = asked["label"].lower()
+    ranked = [d for d in days if d[f"{key}_head"] and d[f"n_tied_{key}"] < d["n_eligible_heads"]]
+    # For the best end every day is often 0% failure; then this line says nothing.
+    if ranked and (extreme != "best" or len({d[f"{key}_head"][rate] for d in ranked}) > 1):
+        chooser = max if asked["label"].startswith("Highest") else min
+        pick = chooser(ranked, key=lambda d: d[f"{key}_head"][rate])
+        head = pick[f"{key}_head"]
+        holders = pick[f"{key}_tied_heads"]
+        who = head["head_id"] if len(holders) == 1 else f"{len(holders)} heads ({_tied_names(holders)})"
+        lines += ["", f"- Across these days the {word} rate was {_pct(head[rate], 4)} on {pick['date']}: "
+                      f"{who}" + (f" ({head[count]:,}/{head['n_cap_present']:,})." if len(holders) == 1 else ".")]
+    with_ranking = [d for d in days if d[f"{key}_head"]]
+    if len(with_ranking) >= 2:
+        every = set(with_ranking[0][f"{key}_tied_heads"])
+        for day in with_ranking[1:]:
+            every &= set(day[f"{key}_tied_heads"])
+        if every and len(every) < max(d["n_eligible_heads"] for d in with_ranking):
+            lines.append(f"- Heads with the {word} rate on every one of these days: "
+                         f"{', '.join(sorted(every))} ({len(every)}).")
     repeat = {}
     for day in ranked:
-        head = day["highest_failure_head" if failure_first else "lowest_success_head"]["head_id"]
-        repeat[head] = repeat.get(head, 0) + 1
+        for head in day[f"{key}_tied_heads"]:
+            repeat[head] = repeat.get(head, 0) + 1
     if repeat and max(repeat.values()) > 1:
-        lines.append("- Heads that were the " + ("highest-failure" if failure_first else "lowest-success")
-                     + " head on more than one day: "
-                     + ", ".join(f"{h} ({n} days)" for h, n in sorted(repeat.items(), key=lambda x: (-x[1], x[0]))
-                                 if n > 1) + ".")
+        top = sorted(repeat.items(), key=lambda item: (-item[1], item[0]))
+        lines.append(f"- Heads with the {word} rate on more than one day: "
+                     + ", ".join(f"{h} ({n} days)" for h, n in top[:8] if n > 1)
+                     + (" and others." if sum(n > 1 for _, n in top) > 8 else "."))
     lines.append("- Every head's rate for every day is in the chart and in the trace data.")
     return lines
 
@@ -553,9 +596,12 @@ def assemble(query, plan, results, pool_meta, trace, *, min_n=30) -> str:
         template = FINDING_TEMPLATES.get(name)
         out.append(f"**{name}**")
         focus = getattr(plan, "focus", "") if name in FOCUS_AWARE else ""
-        out += ((template(result["result"], result["meta"], focus) if focus
-                 else template(result["result"], result["meta"])) if template
-                else [f"- {result['result']}"])
+        if template and name == "head_success_by_day":
+            out += template(result["result"], result["meta"], focus, getattr(plan, "extreme", ""))
+        else:
+            out += ((template(result["result"], result["meta"], focus) if focus
+                     else template(result["result"], result["meta"])) if template
+                    else [f"- {result['result']}"])
         out.append("")
 
     out += ["## 5. Confidence and limits", ""]

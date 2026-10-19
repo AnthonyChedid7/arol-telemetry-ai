@@ -478,7 +478,8 @@ if payload is not None:
         st.markdown(f"<div class='interp'><b>Interpreted as:</b> "
                     f"{interpreted.group(1).replace('`', '')}</div>", unsafe_allow_html=True)
 
-    figures = key_figures(payload["results"], focus=payload.get("focus", ""))
+    figures = key_figures(payload["results"], focus=payload.get("focus", ""),
+                          extreme=payload.get("extreme", ""))
     if figures:
         st.markdown(brand.kpi_cards_html(figures), unsafe_allow_html=True)
 

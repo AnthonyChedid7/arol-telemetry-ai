@@ -77,6 +77,7 @@ def answer_one(question: str, cfg: dict, output: Path, sequence: int,
                            'planner': trace['planner'],
                            'planned_calls': result['plan'].calls if result['plan'] else [],
                            'focus': getattr(result['plan'], 'focus', '') if result['plan'] else '',
+                           'extreme': getattr(result['plan'], 'extreme', '') if result['plan'] else '',
                            'results': result['results'], 'message': result['message'],
                            'markdown': delivered, 'trace': trace,
                            'artifacts': artifacts}, allow_nan=False), result['status']

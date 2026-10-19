@@ -49,35 +49,55 @@ def _failure_figures(name, r):
     return figures
 
 
-def _daily_figures(r, focus=""):
-    failure = focus == "failure"
-    key, rate = (("highest_failure_head", "reject_rate_cap_present") if failure
-                 else ("lowest_success_head", "success_rate_cap_present"))
-    ties = "n_tied_highest_failure" if failure else "n_tied_lowest_success"
+def _daily_figures(r, focus="", extreme=""):
+    from ..analytics.registered_daily_kpi import daily_view
+
+    asked, _ = daily_view(focus, extreme)
+    key, rate, label = asked["key"], asked["rate"], asked["label"]
+    failure = rate.startswith("reject")
+    tone = _failure_tone if failure else _success_tone
     days = r.get("days") or []
-    ranked = [d for d in days if d.get(key) and d[ties] < d["n_eligible_heads"]]
+    ranked = [d for d in days if d.get(f"{key}_head")]
     figures = [dict(label="Days analysed", value=_count(len(days)),
                     note=f"{sum(d['partial_day'] for d in days)} partial")]
-    if ranked:
-        pick = (max if failure else min)(ranked, key=lambda d: d[key][rate])
-        figures.append(dict(label="Highest failure" if failure else "Lowest success",
-                            value=f"{pick[key]['head_id']} {_pct(pick[key][rate], 3)}",
-                            note=f"on {pick['date']}",
-                            tone=_failure_tone(pick[key][rate]) if failure else _success_tone(pick[key][rate])))
-        counts = {}
-        for day in ranked:
-            counts[day[key]["head_id"]] = counts.get(day[key]["head_id"], 0) + 1
-        head, n = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0]
-        figures.append(dict(label="Most often " + ("highest failure" if failure else "lowest"),
-                            value=head, note=f"{n} of {len(ranked)} days",
-                            tone="warn" if n > 1 else "neutral"))
+    if not ranked:
+        return figures
+    # A day where every eligible head ties says nothing about any one head.
+    telling = [d for d in ranked if d[f"n_tied_{key}"] < d["n_eligible_heads"]]
+    counts = {}
+    for day in telling:
+        for head in day[f"{key}_tied_heads"]:
+            counts[head] = counts.get(head, 0) + 1
+    most = max(counts.values(), default=0)
+    leaders = sorted(head for head, n in counts.items() if n == most)
+    if extreme == "best":
+        values = sorted(d[f"{key}_head"][rate] for d in ranked)
+        shared = sorted(len(d[f"{key}_tied_heads"]) for d in ranked)
+        span = _pct(values[0], 3) if values[0] == values[-1] else f"{_pct(values[0], 3)} - {_pct(values[-1], 3)}"
+        figures.append(dict(label=f"{label} each day", value=span,
+                            note=(f"shared by {shared[0]} heads" if shared[0] == shared[-1]
+                                  else f"shared by {shared[0]}-{shared[-1]} heads"),
+                            tone=tone(values[-1] if failure else values[0])))
+    else:
+        open_days = [d for d in ranked if d[f"n_tied_{key}"] < d["n_eligible_heads"]] or ranked
+        pick = (max if failure else min)(open_days, key=lambda d: d[f"{key}_head"][rate])
+        figures.append(dict(label=label, value=f"{pick[f'{key}_head']['head_id']} {_pct(pick[f'{key}_head'][rate], 3)}",
+                            note=f"on {pick['date']}", tone=tone(pick[f"{key}_head"][rate])))
+    if not telling or most < 2:  # no head repeats: nothing to report
+        return figures
+    figures.append(dict(label=f"Most often {label.lower()}",
+                        value=leaders[0] if len(leaders) == 1 else f"{len(leaders)} heads",
+                        note=f"{most} of {len(telling)} days" + ("" if len(leaders) == 1 else
+                                                               f" ({', '.join(leaders[:3])}...)" if len(leaders) > 3
+                                                               else f" ({', '.join(leaders)})"),
+                        tone="warn" if extreme != "best" and most > 1 else "neutral"))
     return figures
 
 
-def _figures_for(name, result, focus=""):
+def _figures_for(name, result, focus="", extreme=""):
     r = result
     if name == "head_success_by_day":
-        return _daily_figures(r, focus)
+        return _daily_figures(r, focus, extreme)
     if focus == "failure" and name in ("success_rate", "success_rate_per_head"):
         return _failure_figures(name, r)
     if name == "torque_stats":
@@ -160,7 +180,7 @@ def _figures_for(name, result, focus=""):
     return []
 
 
-def key_figures(results, limit=6, focus=""):
+def key_figures(results, limit=6, focus="", extreme=""):
     """results: [(tool name, envelope)] as returned by the orchestrator.
 
     focus="failure" leads the rate tools with their failure (rejection) rate.
@@ -170,7 +190,7 @@ def key_figures(results, limit=6, focus=""):
         if not envelope.get("ok") or name in seen:
             continue
         seen.add(name)
-        for figure in _figures_for(name, envelope.get("result") or {}, focus):
+        for figure in _figures_for(name, envelope.get("result") or {}, focus, extreme):
             figure.setdefault("note", "")
             figure.setdefault("tone", "neutral")
             figures.append(figure)

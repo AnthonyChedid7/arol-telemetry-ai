@@ -59,6 +59,13 @@ class Orchestrator:
         # Planners that do not set a focus (e.g. Claude) get it from the wording.
         if not getattr(plan, "focus", ""):
             plan.focus = report_mod.rate_focus(query)
+        if not getattr(plan, "extreme", ""):
+            plan.extreme = report_mod.rate_extreme(query, plan.focus)
+        if any(name == "head_success_by_day" for name, _ in plan.calls):
+            from ..analytics.registered_daily_kpi import daily_view
+            shown = daily_view(plan.focus, plan.extreme)[0]["label"].lower()
+            plan.interpretation = ((plan.interpretation + " ") if plan.interpretation else "") + (
+                f"Shown: the {shown} head(s) of each day, ties listed.")
 
         # A planner that quietly fell back must say so: the report header
         # names the planner, and naming the one we asked for rather than the
@@ -232,11 +239,12 @@ class Orchestrator:
 
         plan = answer.get("plan")
         focus = getattr(plan, "focus", "") if plan is not None else ""
+        extreme = getattr(plan, "extreme", "") if plan is not None else ""
         figures = []
         if "plots" in wanted or "html" in wanted or "pdf" in wanted:
             from ..interface import plots as plots_mod
             figures = plots_mod.render(answer["results"],
-                                       report_dir / md_path.stem, focus=focus)
+                                       report_dir / md_path.stem, focus=focus, extreme=extreme)
             paths["figures"] = [str(p) for _, p in figures]
             if figures:
                 additions = ["", "## Figures", ""]
@@ -251,7 +259,7 @@ class Orchestrator:
             html_path = export_mod.save_html(
                 answer["markdown"], report_dir / md_path.stem,
                 figures=figures, stem=md_path.stem,
-                key_figures=key_figures(answer["results"], focus=focus))
+                key_figures=key_figures(answer["results"], focus=focus, extreme=extreme))
             paths["html"] = str(html_path)
             if "pdf" in wanted:
                 pdf = export_mod.save_pdf(html_path)

@@ -38,6 +38,9 @@ class Plan:
     # "failure" when the question asks about failures/rejects: the report,
     # key figures and charts then lead with the failure rate. Presentation only.
     focus: str = ""
+    # "best" when the question asks for the best side (lowest failure, highest
+    # success); "worst" (the default) for lowest success / highest failure.
+    extreme: str = ""
 
 
 class Planner:
