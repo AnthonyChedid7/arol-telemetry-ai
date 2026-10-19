@@ -3,20 +3,82 @@
 A redeploy (e.g. a push to the branch Streamlit Community Cloud follows) pulls
 new code into the running server, but Streamlit reruns only the main script.
 Modules imported earlier would stay old, so a new function could be missing.
-Before each run, if any project file changed since it was loaded, every
-project module is forgotten and the run imports one consistent, current version.
+Before each run, if any project module is older than its file, every project
+module is forgotten and the run imports one consistent, current version.
+
+"Older than its file" compares the file with its version at import time,
+recorded by an import hook (install_import_stamps) just before the module's
+code is read. Files rewritten while a run is in progress (a deploy pulls them
+one by one) are therefore still detected on the next run; a stamp recorded
+after the run would wrongly mark them current. Modules imported before the
+hook fall back to the source stamp in their bytecode cache, then to stamps
+remembered in `seen` the first time they were observed.
 """
 from __future__ import annotations
 
+import importlib.machinery
 import os
 import sys
 
 PROJECT_PACKAGES = ("src", "scripts")
+STAMP = "__source_version_at_import__"
 
 
-def _project_modules(modules) -> dict:
-    return {name: module for name, module in list(modules.items())
-            if name.split(".")[0] in PROJECT_PACKAGES and getattr(module, "__file__", None)}
+def _file_version(path):
+    try:
+        stat = os.stat(path)
+    except OSError:
+        return None
+    return int(stat.st_mtime) & 0xFFFFFFFF, stat.st_size & 0xFFFFFFFF
+
+
+class _ImportStamps:
+    """Meta-path finder: project modules remember their file version when loaded."""
+
+    marker = True
+
+    def __init__(self, packages):
+        self.packages = tuple(packages)
+
+    def find_spec(self, name, path=None, target=None):
+        if name.split(".")[0] not in self.packages:
+            return None
+        spec = importlib.machinery.PathFinder.find_spec(name, path, target)
+        loader = getattr(spec, "loader", None)
+        if spec is None or not spec.origin or not hasattr(loader, "exec_module"):
+            return spec
+        original, origin = loader.exec_module, spec.origin
+
+        def exec_module(module):
+            setattr(module, STAMP, _file_version(origin))  # before the code is read
+            original(module)
+
+        loader.exec_module = exec_module
+        return spec
+
+
+def install_import_stamps(packages=PROJECT_PACKAGES, meta_path=None) -> None:
+    """Put one current stamping finder first on sys.meta_path (safe to call every run)."""
+    meta_path = sys.meta_path if meta_path is None else meta_path
+    meta_path[:] = [finder for finder in meta_path
+                    if not getattr(finder, "marker", False) or not hasattr(finder, "packages")]
+    meta_path.insert(0, _ImportStamps(packages))
+
+
+def _project_modules(modules, packages=PROJECT_PACKAGES) -> dict:
+    """Project modules with a file: those in `modules`, plus submodules held only as
+    attributes of a project package (an earlier partial reload can leave those)."""
+    found = {}
+    for name, module in list(modules.items()):
+        if name.split(".")[0] not in packages:
+            continue
+        candidates = [module] + [value for value in list(vars(module).values())
+                                 if type(value) is type(module)]
+        for candidate in candidates:
+            label = getattr(candidate, "__name__", "")
+            if label.split(".")[0] in packages and getattr(candidate, "__file__", None):
+                found.setdefault(label, candidate)
+    return found
 
 
 def _stamp(module):
@@ -26,18 +88,56 @@ def _stamp(module):
         return None
 
 
-def record_project_modules(seen: dict, modules=sys.modules) -> None:
-    """Remember the file version of each project module loaded so far."""
-    for name, module in _project_modules(modules).items():
+def _imported_version(module):
+    """(mtime, size) of the source as it was when this module was imported, if known."""
+    stamped = getattr(module, STAMP, None)
+    if stamped is not None:
+        return stamped
+    cached = getattr(module, "__cached__", None)
+    if not cached:
+        return None
+    try:
+        with open(cached, "rb") as stream:
+            header = stream.read(16)
+    except OSError:
+        return None
+    # PEP 552 header: magic, flags, then source mtime and size for timestamp pycs.
+    if len(header) < 16 or int.from_bytes(header[4:8], "little") != 0:
+        return None
+    return int.from_bytes(header[8:12], "little"), int.from_bytes(header[12:16], "little")
+
+
+def _current_version(module):
+    return _file_version(module.__file__)
+
+
+def _is_stale(name, module, seen) -> bool:
+    imported = _imported_version(module)
+    if imported is not None:
+        current = _current_version(module)
+        return current is not None and current != imported
+    return name in seen and seen[name] != _stamp(module)
+
+
+def record_project_modules(seen: dict, modules=sys.modules, packages=PROJECT_PACKAGES) -> None:
+    """Remember file stamps for modules without a bytecode stamp (the fallback)."""
+    for name, module in _project_modules(modules, packages).items():
         seen.setdefault(name, _stamp(module))
 
 
-def drop_changed_project_modules(seen: dict, modules=sys.modules) -> list[str]:
-    """Forget all project modules if any of their files changed; return their names."""
-    project = _project_modules(modules)
-    if not any(name in seen and seen[name] != _stamp(module) for name, module in project.items()):
+def drop_changed_project_modules(seen: dict, modules=sys.modules,
+                                 packages=PROJECT_PACKAGES) -> list[str]:
+    """Forget all project modules if any of them is older than its file; return their names.
+
+    Namespace packages (folders without __init__.py, e.g. src.agent) have no
+    file to check but are dropped too: they keep attributes pointing at their
+    old submodules, and "from src.agent import report" would return those.
+    """
+    project = _project_modules(modules, packages)
+    if not any(_is_stale(name, module, seen) for name, module in project.items()):
         return []
-    for name in project:
+    dropped = sorted(name for name in list(modules) if name.split(".")[0] in packages)
+    for name in dropped:
         modules.pop(name, None)
     seen.clear()
-    return sorted(project)
+    return dropped
