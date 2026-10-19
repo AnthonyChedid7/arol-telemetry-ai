@@ -56,6 +56,9 @@ class Orchestrator:
             except Exception as exc:  # the summary is a planning hint, never evidence
                 trace.note(f"pool summary unavailable for planning ({type(exc).__name__})")
         plan = self.planner.plan(query, context)
+        # Planners that do not set a focus (e.g. Claude) get it from the wording.
+        if not getattr(plan, "focus", ""):
+            plan.focus = report_mod.rate_focus(query)
 
         # A planner that quietly fell back must say so: the report header
         # names the planner, and naming the one we asked for rather than the
@@ -227,11 +230,13 @@ class Orchestrator:
         paths["trace"] = str(answer["trace"].save(
             config_mod.get(self.cfg, "agent.trace_dir", "logs")))
 
+        plan = answer.get("plan")
+        focus = getattr(plan, "focus", "") if plan is not None else ""
         figures = []
         if "plots" in wanted or "html" in wanted or "pdf" in wanted:
             from ..interface import plots as plots_mod
             figures = plots_mod.render(answer["results"],
-                                       report_dir / md_path.stem)
+                                       report_dir / md_path.stem, focus=focus)
             paths["figures"] = [str(p) for _, p in figures]
             if figures:
                 additions = ["", "## Figures", ""]
@@ -246,7 +251,7 @@ class Orchestrator:
             html_path = export_mod.save_html(
                 answer["markdown"], report_dir / md_path.stem,
                 figures=figures, stem=md_path.stem,
-                key_figures=key_figures(answer["results"]))
+                key_figures=key_figures(answer["results"], focus=focus))
             paths["html"] = str(html_path)
             if "pdf" in wanted:
                 pdf = export_mod.save_pdf(html_path)

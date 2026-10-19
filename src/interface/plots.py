@@ -101,6 +101,27 @@ def _heads(data, meta, target):
     return _finish(ax, "Confirmed cap-present success by head", "Success (%)", target)
 
 
+def _head_failures(data, meta, target):
+    """Cap-present rejection (failure) rate per head, for failure-rate questions."""
+    rows = [row for row in data.get("per_head", []) if row.get("reject_rate_cap_present") is not None]
+    if not rows:
+        return None
+    rows = sorted(rows, key=lambda row: (row["machine_id"], row["head_id"]))
+    labels = [row["head_id"] for row in rows]
+    values = [100 * row["reject_rate_cap_present"] for row in rows]
+    fig, ax = plt.subplots(figsize=(max(9, len(rows) * 0.27), 4.5))
+    ax.bar(labels, values, color="#F28C28")
+    ax.tick_params(axis="x", labelrotation=90)
+    # Failure rates are small; scale to the data so differences stay visible.
+    ax.set_ylim(0, max(max(values) * 1.15, 0.01))
+    ax.set_xlabel("Capping head")
+    return _finish(ax, "Cap-present failure rate (rejection flags) by head", "Failure (%)", target)
+
+
+# Tool -> (output file stem, plotter) when the question asks about failures.
+FAILURE_PLOTTERS = {"success_rate_per_head": ("failure_rate_per_head", _head_failures)}
+
+
 def _time(data, meta, target):
     buckets = data.get("by_bucket", [])
     if not buckets:
@@ -140,14 +161,20 @@ PLOTTERS = {"torque_distribution": _histogram, "torque_trend": _trend,
             "observed_throughput": _time, "machine_idle": _idle}
 
 
-def render(results, out_dir):
-    """Return (tool name, PNG path) for every plot with actual observations."""
+def render(results, out_dir, focus=""):
+    """Return (tool name, PNG path) for every plot with actual observations.
+
+    focus="failure" draws the failure rate instead of the success rate where a
+    tool supports both views (see FAILURE_PLOTTERS).
+    """
     output = Path(out_dir)
     made = []
     for name, reply in results:
         if reply.get("ok") and name in PLOTTERS:
             output.mkdir(parents=True, exist_ok=True)
-            path = PLOTTERS[name](reply["result"], reply.get("meta"), output / f"{name}.png")
+            stem, plotter = (FAILURE_PLOTTERS[name] if focus == "failure" and name in FAILURE_PLOTTERS
+                             else (name, PLOTTERS[name]))
+            path = plotter(reply["result"], reply.get("meta"), output / f"{stem}.png")
             if path is not None:
                 made.append((name, path))
     return made

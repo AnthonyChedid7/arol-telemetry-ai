@@ -242,3 +242,56 @@ def test_llm_kpi_remains_blocked_before_inference(monkeypatch):
     monkeypatch.setattr(planner,'_chat',lambda *a: pytest.fail('LLM KPI is not integrated'))
     plan=planner.plan('success rate for head 5',{})
     assert plan.ambiguous and not plan.calls
+
+
+# --- a failure-rate question is answered with the failure rate first ----------------
+
+@pytest.mark.parametrize('question, focus', [
+    ('show me the failure rate for each head', 'failure'),
+    ('reject rate per head', 'failure'),
+    ('success rate per head', ''),
+])
+def test_rate_wording_sets_the_presentation_focus(question, focus):
+    assert RulePlanner().plan(question, {}).focus == focus
+
+
+@pytest.mark.parametrize('question, focus', [
+    ('which heads fail the most?', 'failure'),
+    ('how many rejects did head 7 have', 'failure'),
+    ('show defective closures per head', 'failure'),
+    ('success and failure per head', ''),  # both asked: keep the default view
+    ('average torque for head 5', ''),
+])
+def test_rate_focus_from_any_planners_wording(question, focus):
+    from src.agent.report import rate_focus
+    assert rate_focus(question) == focus
+
+
+def test_failure_question_leads_report_figures_and_chart_with_failure(sources, tmp_path):
+    from src.interface import plots
+    from src.interface.dashboard import key_figures
+    cfg = {**CFG, 'data': {'source': 'person_a_pool',
+                         'person_a': {'fixture': str(sources['person_a_pool'])}}}
+    answer = Orchestrator(cfg=cfg).answer('show me the failure rate for each head')
+    findings = answer['markdown'].split('## 4. Findings', 1)[1]
+    assert '| Machine | Head | Failure rate | Rejects / cap-present | Success rate |' in findings
+    assert '| M1 | H05 | **50.0000%** | 1 / 2 | 50.0000% |' in findings
+    assert findings.index('**Failure rate**') < findings.index('Cap-present success')
+    figures = key_figures(answer['results'], focus=answer['plan'].focus)
+    assert [f['label'] for f in figures][:1] == ['Failure rate']
+    assert figures[-1]['label'] == 'Highest failure head' and figures[-1]['value'].startswith('H05')
+    made = plots.render(answer['results'], tmp_path, focus=answer['plan'].focus)
+    assert [path.name for _, path in made] == ['failure_rate_per_head.png']
+
+
+def test_success_question_keeps_the_success_view(sources, tmp_path):
+    from src.interface import plots
+    from src.interface.dashboard import key_figures
+    cfg = {**CFG, 'data': {'source': 'person_a_pool',
+                         'person_a': {'fixture': str(sources['person_a_pool'])}}}
+    answer = Orchestrator(cfg=cfg).answer('success rate per head')
+    assert answer['plan'].focus == ''
+    assert '| Failure rate |' not in answer['markdown']
+    assert key_figures(answer['results'])[0]['label'] == 'Success rate'
+    made = plots.render(answer['results'], tmp_path)
+    assert [path.name for _, path in made] == ['success_rate_per_head.png']

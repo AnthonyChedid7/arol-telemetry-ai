@@ -36,6 +36,7 @@ def parse_kpi_request(query):
         return clarify()
     tools = ['success_rate_per_head'] if per_head else ['success_rate', 'success_rate_per_head']
     failure_wording = re.search(r'\bfailure rate\b', base.group(), re.I) is not None
+    reject_wording = re.search(r'\breject(?:ion)? rate\b', base.group(), re.I) is not None
     return dict(goal=('Report cap-present rejection flags as the requested per-head failure-rate interpretation.'
                       if failure_wording else
                       'Describe observed-event KPIs with explicit denominators within the requested scope.'),
@@ -43,4 +44,5 @@ def parse_kpi_request(query):
                 rationale='parsed the complete KPI question and preserved all scope; all statuses retained',
                 interpretation=('Failure rate means rejection flags among confirmed cap-present observed events; '
                                 'No Load and unknown cap presence are reported separately.'
-                                if failure_wording else ''))
+                                if failure_wording else ''),
+                focus='failure' if failure_wording or reject_wording else '')

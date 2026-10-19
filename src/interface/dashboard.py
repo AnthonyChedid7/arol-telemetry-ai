@@ -25,8 +25,34 @@ def _success_tone(rate):
     return "ok" if rate >= 0.995 else "warn" if rate >= 0.98 else "bad"
 
 
-def _figures_for(name, result):
+def _failure_tone(rate):
+    if rate is None:
+        return "neutral"
+    return "ok" if rate <= 0.005 else "warn" if rate <= 0.02 else "bad"
+
+
+def _failure_figures(name, r):
+    """Rate tools seen from the failure side, for failure-rate questions."""
+    o = r["overall"]
+    figures = [dict(label="Failure rate", value=_pct(o.get("reject_rate_cap_present"), 3),
+                    tone=_failure_tone(o.get("reject_rate_cap_present")),
+                    note=f"{_count(o.get('n_reject_cap_present'))} rejects / {_count(o.get('n_cap_present'))} cap-present"),
+               dict(label="Success rate", value=_pct(o.get("success_rate_cap_present"), 3),
+                    note="cap-present closures"),
+               dict(label="Cap-present closures", value=_count(o.get("n_cap_present")),
+                    note=f"No Load {_pct(o.get('no_load_fraction_all_observed'), 1)} of events")]
+    heads = [h for h in r.get("per_head") or [] if h.get("reject_rate_cap_present") is not None]
+    if heads:
+        worst = max(heads, key=lambda h: h["reject_rate_cap_present"])
+        figures.append(dict(label="Highest failure head", value=f"{worst['head_id']} {_pct(worst['reject_rate_cap_present'])}",
+                            tone=_failure_tone(worst["reject_rate_cap_present"]), note=f"of {len(heads)} heads"))
+    return figures
+
+
+def _figures_for(name, result, focus=""):
     r = result
+    if focus == "failure" and name in ("success_rate", "success_rate_per_head"):
+        return _failure_figures(name, r)
     if name == "torque_stats":
         return [dict(label="Mean torque", value=_num(r["mean"], " Nm"), note=f"n = {_count(r['sample_size'])}"),
                 dict(label="Spread (std)", value=_num(r["std"], " Nm", 4), note="sample standard deviation"),
@@ -107,14 +133,17 @@ def _figures_for(name, result):
     return []
 
 
-def key_figures(results, limit=6):
-    """results: [(tool name, envelope)] as returned by the orchestrator."""
+def key_figures(results, limit=6, focus=""):
+    """results: [(tool name, envelope)] as returned by the orchestrator.
+
+    focus="failure" leads the rate tools with their failure (rejection) rate.
+    """
     figures, seen = [], set()
     for name, envelope in results:
         if not envelope.get("ok") or name in seen:
             continue
         seen.add(name)
-        for figure in _figures_for(name, envelope.get("result") or {}):
+        for figure in _figures_for(name, envelope.get("result") or {}, focus):
             figure.setdefault("note", "")
             figure.setdefault("tone", "neutral")
             figures.append(figure)

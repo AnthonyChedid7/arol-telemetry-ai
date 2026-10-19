@@ -20,19 +20,43 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import re
 
 
 def _pct(value, digits=2):
     return "n/a" if value is None else f"{value * 100:.{digits}f}%"
 
 
+FAILURE = "failure"
+_FAILURE_WORDS = re.compile(r"\b(?:fail(?:s|ed|ing|ures?)?|reject(?:s|ed|ions?)?|defect(?:s|ive)?)\b", re.I)
+_SUCCESS_WORDS = re.compile(r"\bsuccess", re.I)
+# Tools whose findings, key figures and chart can lead with the failure rate.
+FOCUS_AWARE = frozenset({"success_rate", "success_rate_per_head"})
+
+
+def rate_focus(query: str) -> str:
+    """'failure' when a question asks about failures or rejects and not about success.
+
+    Presentation only: the same tools run and the same numbers are reported;
+    the failure (cap-present rejection) rate is just shown first.
+    """
+    text = query or ""
+    return FAILURE if _FAILURE_WORDS.search(text) and not _SUCCESS_WORDS.search(text) else ""
+
+
 # --- per-tool finding templates -------------------------------------------
 
-def _kpi_row_lines(o):
+def _kpi_row_lines(o, focus=""):
+    success = f"- Cap-present success: **{_pct(o['success_rate_cap_present'], 6)}** ({o['n_success_cap_present']:,}/{o['n_cap_present']:,})."
+    if focus == FAILURE:
+        rates = [f"- **Failure rate** (cap-present rejection flags): **{_pct(o['reject_rate_cap_present'], 6)}** ({o['n_reject_cap_present']:,}/{o['n_cap_present']:,}).",
+                 success]
+    else:
+        rates = [success,
+                 f"- Cap-present rejection flags: **{_pct(o['reject_rate_cap_present'], 6)}** ({o['n_reject_cap_present']:,}/{o['n_cap_present']:,})."]
     return [
         f"- Observed exact +1 events: **{o['n_observed']:,}**; confirmed cap-present: **{o['n_cap_present']:,}**; unknown cap presence: **{o['n_cap_unknown']:,}**.",
-        f"- Cap-present success: **{_pct(o['success_rate_cap_present'], 6)}** ({o['n_success_cap_present']:,}/{o['n_cap_present']:,}).",
-        f"- Cap-present rejection flags: **{_pct(o['reject_rate_cap_present'], 6)}** ({o['n_reject_cap_present']:,}/{o['n_cap_present']:,}).",
+        *rates,
         f"- Rejection flags outside the cap-present population: **{o['n_reject_outside_cap_present']:,}**; unknown rejection flags: {o['n_reject_unknown']:,}.",
         f"- No Load class: {o['n_no_load_class']:,}/{o['n_observed']:,} observed events ({_pct(o['no_load_fraction_all_observed'], 6)}). Explicit cap absence: {o['n_cap_absent']:,} events.",
         f"- Status-0 fraction of all observed events: {_pct(o['success_fraction_all_observed'], 6)} ({o['n_success_all']:,}/{o['n_observed']:,}).",
@@ -40,19 +64,34 @@ def _kpi_row_lines(o):
     ]
 
 
-def _finding_success_rate(result, meta):
-    lines = _kpi_row_lines(result['overall'])
+def _finding_success_rate(result, meta, focus=""):
+    lines = _kpi_row_lines(result['overall'], focus)
     if result['overall']['n_observed'] == 0:
         lines.append('- No observed events matched; rates with empty denominators are undefined (n/a).')
     return lines
 
 
-def _finding_success_rate_per_head(result, meta):
+def _failure_table(rows):
+    """One line per head: the failure rate the question asked for, with its counts."""
+    lines = ["", "| Machine | Head | Failure rate | Rejects / cap-present | Success rate |",
+             "|---|---|---:|---:|---:|"]
+    for row in rows:
+        lines.append(f"| {row['machine_id']} | {row['head_id']} | **{_pct(row['reject_rate_cap_present'], 4)}** | "
+                     f"{row['n_reject_cap_present']:,} / {row['n_cap_present']:,} | "
+                     f"{_pct(row['success_rate_cap_present'], 4)} |")
+    return lines + [""]
+
+
+def _finding_success_rate_per_head(result, meta, focus=""):
     rows = result['per_head']
     lines = [f"- {result['n_head_groups']} machine/head groups; sorted by identifiers, without ranking."]
+    if focus == FAILURE and rows:
+        lines.append("- Failure rate = cap-present rejection flags / confirmed cap-present observed events.")
+        lines += _failure_table(rows)
+        lines.append("Full counts per head:")
     for row in rows:
         lines.append(f"- **{row['machine_id']} / {row['head_id']}**:")
-        lines.extend(_kpi_row_lines(row))
+        lines.extend(_kpi_row_lines(row, focus))
         if row['below_min_cap_present_n']:
             lines.append(f"- This group has {row['n_cap_present']:,} cap-present observations, below min_n={row['min_cap_present_n']}.")
     if not rows:
@@ -458,7 +497,9 @@ def assemble(query, plan, results, pool_meta, trace, *, min_n=30) -> str:
     for name, result in ok_results:
         template = FINDING_TEMPLATES.get(name)
         out.append(f"**{name}**")
-        out += (template(result["result"], result["meta"]) if template
+        focus = getattr(plan, "focus", "") if name in FOCUS_AWARE else ""
+        out += ((template(result["result"], result["meta"], focus) if focus
+                 else template(result["result"], result["meta"])) if template
                 else [f"- {result['result']}"])
         out.append("")
 

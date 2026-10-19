@@ -35,6 +35,9 @@ class Plan:
     clarification: str = ""
     rationale: str = ""
     interpretation: str = ""
+    # "failure" when the question asks about failures/rejects: the report,
+    # key figures and charts then lead with the failure rate. Presentation only.
+    focus: str = ""
 
 
 class Planner:
