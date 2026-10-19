@@ -48,7 +48,7 @@ the user names an exact code. Questions about all closures need no status filter
 torque tools then exclude "No Load" cycles (the head cycled without a cap, torque \
 about 0 Nm) by default. Use status_filter "all_statuses" only when the user \
 explicitly wants No Load cycles included.
-- Success rate, yield, failure/reject rate and quality per head are KPI \
+- Success rate, yield, failure/reject/error rate and quality per head are KPI \
 questions (success_rate, success_rate_per_head). "Which head is worst/best" \
 means rank_heads_by_success. "Is head N worse than the others", "how does head N \
 compare to its peers" means compare_head_success. Comparing the torque of two \

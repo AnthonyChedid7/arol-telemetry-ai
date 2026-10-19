@@ -295,3 +295,16 @@ def test_success_question_keeps_the_success_view(sources, tmp_path):
     assert key_figures(answer['results'])[0]['label'] == 'Success rate'
     made = plots.render(answer['results'], tmp_path)
     assert [path.name for _, path in made] == ['success_rate_per_head.png']
+
+
+@pytest.mark.parametrize('question, tool', [
+    ('show me the error rate for each head', 'success_rate_per_head'),
+    ('error rate per head', 'success_rate_per_head'),
+    ('give me the error rate of all heads for each day', 'head_success_by_day'),
+    ('which head has the most errors each day', 'head_success_by_day'),
+])
+def test_error_wording_is_treated_as_failure(question, tool):
+    from src.agent.report import rate_focus
+    plan = RulePlanner().plan(question, {})
+    assert [name for name, _ in plan.calls] == [tool] and plan.focus == 'failure'
+    assert rate_focus(question) == 'failure'  # also for Claude-planned questions

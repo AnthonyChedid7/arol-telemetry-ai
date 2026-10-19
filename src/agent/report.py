@@ -28,7 +28,7 @@ def _pct(value, digits=2):
 
 
 FAILURE = "failure"
-_FAILURE_WORDS = re.compile(r"\b(?:fail(?:s|ed|ing|ures?)?|reject(?:s|ed|ions?)?|defect(?:s|ive)?)\b", re.I)
+_FAILURE_WORDS = re.compile(r"\b(?:fail(?:s|ed|ing|ures?)?|reject(?:s|ed|ions?)?|defect(?:s|ive)?|errors?)\b", re.I)
 _SUCCESS_WORDS = re.compile(r"\bsuccess", re.I)
 # Tools whose findings, key figures and chart can lead with the failure rate.
 FOCUS_AWARE = frozenset({"success_rate", "success_rate_per_head", "head_success_by_day"})
