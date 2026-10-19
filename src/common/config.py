@@ -35,7 +35,7 @@ DOTENV = REPO_ROOT / ".env"
 # Only these settings are read from .env, so it cannot change anything else.
 _DOTENV_KEYS = ("ANTHROPIC_API_KEY", "AROL_MANIFEST", "AROL_PLANNER", "AROL_DEMO",
                 "SUPABASE_URL", "SUPABASE_KEY", "AROL_STORAGE_BUCKET", "AROL_STORE_DIR",
-                "AROL_UPLOAD_PASSWORD")
+                "AROL_UPLOAD_PASSWORD", "AROL_CACHE_DIR")
 
 
 def load_dotenv(path: str | Path | None = None) -> list[str]:

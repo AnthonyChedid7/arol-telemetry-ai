@@ -1,5 +1,7 @@
 # Project audit: AROL telemetry AI (branch `claude-planner`)
 
+> **Update 2026-10-19 (`pro-ui`).** Later work, not covered by this audit: hosted website with the owner's key in Streamlit Secrets, shared daily uploads in a Supabase bucket and session-only files, per-day head results (`head_success_by_day`), lazy head rankings and peer comparisons (no event limit), direct answers in the asked form (built-in, or worded by Claude with every number checked against the results), and code reloading on the host. See the README and `docs/HOSTING.md`; the test suite then reported 1,028 passed, 4 skipped.
+
 Date: 2026-10-13. Scope: all code, tests, scripts, configuration and documentation,
 on top of `EddyKhoury/arol-telemetry-ai` `main` at `93b4a6d`.
 

@@ -1,7 +1,16 @@
 # Telemetry report
 
 *Query:* Success rate per head for machine DEMO from 2026-02-01T00:00:00 until 2026-02-01T00:06:40
-*Generated:* 2026-10-13 20:32  |  *Planner:* rules  |  *Schema:* 1.0
+*Generated:* 2026-10-19 19:32  |  *Planner:* rules  |  *Schema:* 1.0
+
+## Answer
+
+Here is the success rate of each of the 2 heads from 2026-02-01T00:00:00 to 2026-02-01T00:06:40.
+
+| Head | Success rate | Successful | Closures with a cap |
+|---|---:|---:|---:|
+| H01 | 100.0000% | 90 | 90 |
+| H02 | 97.7778% | 88 | 90 |
 
 ## 1. Goal
 
@@ -9,7 +18,7 @@ Describe observed-event KPIs with explicit denominators within the requested sco
 
 ## 2. Data used
 
-- Pool `sample` from the **person_a_pool** source, 798 closure events across 2 heads.
+- Pool `sample` from the **person_a_pool** source, 798 observed exact +1 events across 2 heads.
 - Window 2026-02-01T00:00:01 to 2026-02-01T00:06:39 (clock: as recorded; timezone unconfirmed).
 - Machines: DEMO.
 - Events loaded for the requested scope: 798 of 798 stored observed events in this pool.
@@ -18,7 +27,7 @@ Describe observed-event KPIs with explicit denominators within the requested sco
 
 ## 3. Analyses executed
 
-- `success_rate_per_head` (agent: kpi) - n=180, 9.38 ms - ok
+- `success_rate_per_head` (agent: kpi) - n=180, 7.42 ms - ok
   - filters: start>=2026-02-01T00:00:00, end<2026-02-01T00:06:40, machine_id=DEMO
 
 ## 4. Findings
@@ -56,13 +65,13 @@ Describe observed-event KPIs with explicit denominators within the requested sco
 
 ## Trace
 
-1 tool call(s), 31 ms total.
+1 tool call(s), 33 ms total.
 
 | # | step | tool | n | ms | ok |
 |---|------|------|---|----|----|
 | 0 | plan |  |  |  | yes |
 | 1 | load_pool |  |  |  | yes |
-| 2 | tool_call | success_rate_per_head | 180 | 9.38 | yes |
+| 2 | tool_call | success_rate_per_head | 180 | 7.42 | yes |
 | 3 | validate |  |  |  | yes |
 
 ## Figures

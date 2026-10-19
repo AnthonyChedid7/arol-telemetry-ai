@@ -2,8 +2,9 @@
 
 These three reports use the synthetic two-file `DEMO` machine created by
 `python -m scripts.generate_sample_reports`. They contain no private AROL
-telemetry. Each report names its exact question and includes a PNG figure
-where the tool returned chartable results.
+telemetry. Each report names its exact question, starts with the direct
+**Answer** (and its table when the question asks for one), and includes a PNG
+figure where the tool returned chartable results.
 
 - [Torque statistics and histogram](torque-and-distribution.md)
 - [Per-head KPI fractions](head-kpis.md)

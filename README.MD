@@ -1,6 +1,8 @@
 # AROL Telemetry AI
 
-An industrial telemetry analysis project for an AROL capping machine. It converts timestamped, per-head counter readings into **observed closure events**, lets a scoped question select registered analyses, and produces a Markdown report with a JSON execution trace. The CLI routes questions deterministically by default; a [Claude planner](#claude-planner-everyday-wording) understands everyday wording across all tools (the website's default when an Anthropic key is set), and a local Ollama planner is available for a narrower set of torque questions. In every mode the numbers come from deterministic tools, never from a model.
+An industrial telemetry analysis project for an AROL capping machine. It converts timestamped, per-head counter readings into **observed closure events**, lets a scoped question select registered analyses, and answers it: a **direct answer** in the form the question asked for (a sentence, a table of every head on every day, a per-head table or a chart), followed by a full Markdown report and a JSON execution trace for investigation. The CLI routes questions deterministically by default; a [Claude planner](#claude-planner-everyday-wording) understands everyday wording across all tools and words the answer (the website's default when an Anthropic key is set), and a local Ollama planner is available for a narrower set of torque questions. In every mode the numbers come from deterministic tools, never from a model; any number Claude writes is checked against the tool results.
+
+The [website](#the-website) can be hosted on Streamlit Community Cloud with the owner's key, so testers need only a link; daily AROL CSV files can be added from the browser and are kept in a Supabase bucket ([docs/HOSTING.md](docs/HOSTING.md)).
 
 > **Scope of the numbers:** An event represents an observed counter change of exactly `+1` between successive readings. Larger jumps and decreases are measured but are not reconstructed into individual closures. Results therefore describe **observed events**, not all physical production.
 
@@ -8,6 +10,7 @@ An industrial telemetry analysis project for an AROL capping machine. It convert
 
 - [Requirements and installation](#requirements-and-installation)
 - [Try it yourself: demo data](#try-it-yourself-demo-data)
+- [The website](#the-website)
 - [Run without private telemetry](#run-without-private-telemetry)
 - [Prepare a real event pool](#prepare-a-real-event-pool)
 - [Ask questions and inspect results](#ask-questions-and-inspect-results)
@@ -39,7 +42,7 @@ python3.12 -m venv .venv
 .venv/bin/python -m pytest tests -q
 ```
 
-Run commands from the **repository root**. Runtime packages are pinned in `requirements.txt` (Polars and Parquet for processing, PyYAML for configuration, the Anthropic SDK for the optional Claude planner); `requirements-dev.txt` adds pytest and `requirements-web.txt` adds Streamlit. Without Streamlit the one website test is skipped. Tests never contact a model API, even when a key is set. Running `pytest tests -q` selects the actual suite and avoids accidentally collecting backed-up test files stored elsewhere in a local working directory.
+Run commands from the **repository root**. Runtime packages are pinned in `requirements.txt` (Polars and Parquet for processing, PyYAML for configuration, the Anthropic SDK for the optional Claude planner); `requirements-dev.txt` adds pytest and `requirements-web.txt` adds Streamlit. Without Streamlit the website tests are skipped. Tests never contact a model API, even when a key is set. Running `pytest tests -q` selects the actual suite and avoids accidentally collecting backed-up test files stored elsewhere in a local working directory.
 
 On Windows, substitute `.venv\Scripts\python` for `.venv/bin/python` in the commands below. If `python3.12` is unavailable, install Python 3.12 first and check `python3.12 --version`.
 
@@ -88,8 +91,11 @@ tester uses their own key from https://console.anthropic.com, in any of these wa
 | Environment | Set `ANTHROPIC_API_KEY` | On your computer only |
 
 `config.yaml` and `config.local.yaml` refuse any key (the app stops with an
-error), so one cannot be committed by accident. Each question costs the key's
-owner well under one cent; the tests never use a key.
+error), so one cannot be committed by accident. The tests never use a key.
+Each question makes two requests (planning, then wording the answer from the
+results) and typically costs the key's owner a few cents; the token usage of
+both is in the trace. On a hosted site the owner's key can live in the app's
+Secrets instead, so visitors need none ([docs/HOSTING.md](docs/HOSTING.md)).
 
 ### Power test (accuracy, scale, robustness)
 
@@ -112,26 +118,53 @@ demo data, Claude and the rules) gave:
 | Robustness: typos, Italian, vague dates, impossible heads, prompt injection, off-topic | **12/12** answered correctly or asked; nothing invented |
 | Scale: whole-pool totals | 0.8 M events in 0.4-0.7 s; 2.3 M in 0.4-1.0 s; **21.9 M events (28 days) in 3.4-12.5 s** |
 
-### Put the website online (free)
+## The website
 
-The app can be hosted on Streamlit Community Cloud so testers only need a link.
-It runs on the demo data and the offline rules, so it costs nothing and no
-private data or API key leaves your computer.
+Run it locally with `.venv/bin/streamlit run app/streamlit_app.py` from the
+repository root, or host it (below). The page has three parts.
 
-1. Push the branch to GitHub (the repository is public).
-2. Sign in at https://share.streamlit.io with the GitHub account that can see the repository.
-3. *Create app* > *Deploy a public app from GitHub*: repository `EddyKhoury/arol-telemetry-ai`,
-   the branch, main file path `app/streamlit_app.py`. Under *Advanced settings*
-   choose Python 3.12. Do **not** add an Anthropic key as a secret: every visitor's
-   question would be billed to it.
-4. Deploy. The first start builds the demo data (a few seconds); then share the link.
+**Data to analyse** (sidebar). Depending on the configuration it offers:
 
-`app/requirements.txt` installs the runtime and website requirements. Hosted
-apps sleep after a period without visitors and wake up on the next visit.
+| Source | What it is |
+| --- | --- |
+| Private event pool (this computer) | A local pool: `AROL_MANIFEST`, else the presentation pool, else the only pool under `data/event_pools/`. |
+| AROL telemetry (shared, stored) | Days added to the shared store (Supabase, or a local folder for testing) for everyone using the site. Re-read at most once a minute, so new days appear without a restart; **Check for new days** refreshes at once. |
+| My own CSV files (this session only) | Up to 7 daily CSVs of one machine, converted for that browser session only, never added to the shared data, deleted when the session ends. No password needed. |
+| Demo data (synthetic) | The made-up day described above. |
 
-To give visitors Claude without their own key, and to add a day of AROL
-telemetry at a time from the website (kept in a free Supabase bucket), follow
-[docs/HOSTING.md](docs/HOSTING.md).
+With a store configured, **Add a day to the shared data** (password-protected)
+checks, converts and stores one daily CSV. Days must be added in date order and
+belong to one machine; anything else is refused with nothing changed.
+
+**Ask a question.** Claude (default when a key is available) or the rules
+(*Rules only*). The example list follows the chosen data's dates; on real data
+its windows are 12 hours, because a whole real day (about 1.15 M events) is
+above the row-level event limit.
+
+**Answer.** Every result starts with the direct answer: a sentence that answers
+exactly the question, plus the form it asked for (a chart for "plot ...", a
+table of every head on every day for "performance of each head on each day", a
+per-head table for "... for each head", one row per day, or the sentence alone).
+The **Interpreted as** line shows how the question was understood. Key figures,
+the full report, charts, the trace and downloads are behind **Show details for
+further investigation**.
+
+### Hosting it (Streamlit Community Cloud)
+
+- **Demo only, free:** deploy `app/streamlit_app.py` from GitHub at
+  https://share.streamlit.io with no secrets. Visitors get the demo data and the
+  rules, or paste their own key.
+- **Full setup:** the owner's Anthropic key, a Supabase bucket for the shared
+  days and an upload password go into the app's **Secrets**; visitors need no
+  key, and the app can be restricted to invited viewers. Step by step in
+  [docs/HOSTING.md](docs/HOSTING.md).
+
+Streamlit deploys only from a repository the deploying account administers; a
+collaborator on someone else's personal repository can deploy from a fork. A
+push to the deployed branch is picked up without a restart:
+`app/streamlit_app.py` reloads project modules that changed on disk
+(`app/module_refresh.py`). Hosted apps sleep after 12 hours without visitors
+and wake on the next visit.
 
 ## Run without private telemetry
 
@@ -155,7 +188,7 @@ For a committed, clean Git checkout, you can also run:
 
 The evaluators leave tracked files untouched by default: `scripts.evaluate_agent` writes its evidence into its run folder under `data/`, and `scripts.build_event_pool` next to the pool. Pass `--record` to promote a run to `benchmarks/integration/` and append a checkpoint to `docs/PROJECT-AUDIT.md` and `docs/INTEGRATION-TRACKER.md`; commit those changes before running the clean-checkout check, which refuses to run on a modified tree.
 
-This runs tests and the controlled evaluation from a temporary detached checkout with the current virtual environment. It requires `git status --short` to show no changes and does not test dependency installation, private telemetry, or a live model. In a previous release review the clean checkout reported **848 passed, 4 skipped** (936 passed, 4 skipped on the `audit-followups` branch), then **28/28** controlled cases; these are recorded historical results, not promised counts for future revisions. Current results come from the commands you run.
+This runs tests and the controlled evaluation from a temporary detached checkout with the current virtual environment. It requires `git status --short` to show no changes and does not test dependency installation, private telemetry, or a live model. In a previous release review the clean checkout reported **848 passed, 4 skipped** (936 passed, 4 skipped on the `audit-followups` branch), then **28/28** controlled cases; on `pro-ui` at commit `d7e478a` (2026-10-19) the suite reported **1,028 passed, 4 skipped**. These are recorded historical results, not promised counts for future revisions. Current results come from the commands you run.
 
 ## Prepare a real event pool
 
@@ -218,13 +251,13 @@ No Load intervals. It saves PNG figures from returned tool results and links
 them in the Markdown report. See [three synthetic example reports](docs/samples/README.md)
 or recreate them using `.venv/bin/python -m scripts.generate_sample_reports`.
 
-Every question gets its own Markdown report and JSON trace under `data/demo_runs/session-.../question-.../`. The report states the filters, event population, definitions, numerical findings, and limits; the trace lists planning, loading, tool calls, and any clarification or error. Unsupported or ambiguous questions produce `needs_clarification` with **zero analysis tool calls**. For example, asking an unrelated general-knowledge question does not turn this project into a general chatbot. The CLI returns exit status `2` for a non-`ok` result, while still saving the report and trace.
+Every question gets its own Markdown report and JSON trace under `data/demo_runs/session-.../question-.../`. The report starts with an **Answer** section (the direct answer and, when the question asks for one, its table), then states the filters, event population, definitions, numerical findings, and limits; with `--json` the answer is also in the `answer` field (`sentence`, `artifact`, `metric`, `table`, and `source`: `built-in` or `claude`); the trace lists planning, loading, tool calls, and any clarification or error. Unsupported or ambiguous questions produce `needs_clarification` with **zero analysis tool calls**. For example, asking an unrelated general-knowledge question does not turn this project into a general chatbot. The CLI returns exit status `2` for a non-`ok` result, while still saving the report and trace.
 
-For the local website, install `requirements-web.txt`, then run `.venv/bin/streamlit run scripts/web_demo.py` from the repository root and open the local URL it prints. It uses the pool named by the `AROL_MANIFEST` environment variable, otherwise the presentation pool if present, otherwise the only pool under `data/event_pools/`. The sidebar chooses how questions are understood: Claude (default when `ANTHROPIC_API_KEY` is set) or the deterministic rules described here. The page clearly shows the selected machine. Ask `Is there any problem with head 4?` and it will request a bounded time window before reading events. With a window, it compares confirmed cap-present success against eligible peers and checks torque flags through registered tools. The short diagnostic answer and the detailed report state the observed evidence and why it cannot establish a yes/no fault verdict. The page exposes planned calls, the execution trace, and tool results. The same route is available in the CLI with `--planner diagnostic`, where the machine must be named in the question.
+For the local website, install `requirements-web.txt` and see [The website](#the-website). With the rules, a head check such as `Is there any problem with head 4?` first asks for a bounded time window; with a window it compares confirmed cap-present success against eligible peers and checks torque flags through registered tools, and the report states the observed evidence and why it cannot establish a yes/no fault verdict. The same route is available in the CLI with `--planner diagnostic`, where the machine must be named in the question.
 
-After changing backend Python files while Streamlit is running, restart the local server. A page rerun can retain an older imported planner module even while showing updated page code.
+Run the website through `app/streamlit_app.py`: it reloads backend modules that changed while it runs. `scripts/web_demo.py` started directly does not, so restart it after changing backend Python files.
 
-The source limits **materialized** events to **1,000,000** per request (`data.max_loaded_events`). Questions answered by totals (torque statistics, success rate, success rate per head) have no such limit: above it they are computed while scanning the Parquet partitions, without loading the events, and the report says so (for example average torque over 2,290,224 events in about 0.2 s). Tools that need individual rows (histogram, trend, anomalies, head comparisons, time buckets, idle) keep the limit; narrow the machine, head, or time window when such a query exceeds it. A one-day trend returns at most `analytics.trend_max_points` (2,000) points of its moving-average series; the slope and drift always use every point. A peer comparison deliberately loads the other heads in the same machine/time window, because the specified head is the focus of the comparison.
+The source limits **materialized** events to **1,000,000** per request (`data.max_loaded_events`). Questions answered by totals have no such limit: torque statistics, success rate, success rate per head, head ranking, peer comparison and per-day head results are computed while scanning the Parquet partitions, without loading the events, and the report says so (for example average torque over 2,290,224 events in about 0.2 s). Per-day head results run one query per calendar day, so memory stays bounded for any number of days (10 M events over 15 days in about 7 s). Tools that need individual rows (histogram, trend, anomalies, time buckets, idle) keep the limit; narrow the machine, head, or time window when such a query exceeds it. A one-day trend returns at most `analytics.trend_max_points` (2,000) points of its moving-average series; the slope and drift always use every point. A peer comparison always uses every other head in the same machine/time window, because the specified head is the focus of the comparison.
 
 ## Architecture
 
@@ -240,7 +273,10 @@ flowchart TD
     Pool --> Source["Select Parquet event rows or raw statuses"]
     Guard --> Source
     Source --> Tools["Registered torque, KPI and idle tools"]
-    Tools --> Output["Markdown report, optional PNGs and JSON trace"]
+    Tools --> Answer["Direct answer in the asked form (built-in, or worded by Claude with every number checked)"]
+    Answer --> Output["Answer, Markdown report, optional PNGs and JSON trace"]
+    Upload["Daily CSV uploaded on the website"] --> Store["Shared store (Supabase bucket)"]
+    Store --> Pool
 ```
 
 | Stage | Main code | Responsibility |
@@ -250,6 +286,8 @@ flowchart TD
 | Scoped source | `src/common/event_pool_source.py`, `src/common/datasource.py`, `src/ingestion/adapter.py` | Validate the manifest, select relevant Parquet rows, preserve original event fields, and enforce the materialization limit. |
 | Analysis | `src/common/registry.py`, `src/common/runtime.py`, `src/analytics/registered_*.py` | Validate tool arguments, apply the requested scope, run deterministic analytics and return structured results with units and counts. |
 | Orchestration and output | `src/agent/orchestrator.py`, `src/agent/report.py`, `src/agent/trace.py`, `scripts/demo_agent.py` | Run the plan, record failures and timing, assemble a report, and save a trace. |
+| Direct answer | `src/agent/answer.py`, `ClaudePlanner.compose_answer` | Pick the form the question asked for (from its wording, or Claude's choice), write the answer sentence and table, and reject any Claude answer with a number not found in the tool results. |
+| Website and shared data | `app/streamlit_app.py`, `app/module_refresh.py`, `scripts/web_demo.py`, `src/common/pool_store.py`, `scripts/check_storage.py` | Data-source choice, answer-first page, password-protected daily uploads appended to the pool and kept in a Supabase bucket (or local folder), session-only pools, and reloading changed code after a deploy. |
 
 Person A implemented the CSV ingestion, observed event construction, and core torque analytics. Person B implemented the agent planner/orchestration, shared tool registry, reporting, traces, and related analyses. Their integration connects the partitioned event source to registered torque and explicit-denominator KPI tools. The separate project reference guides describe individual functions and ownership in greater detail.
 
@@ -263,7 +301,8 @@ Person A implemented the CSV ingestion, observed event construction, and core to
 | Torque flags | `detect_torque_anomalies` | Configured limit and statistical flags; a flag does not identify a cause. |
 | Two-head torque comparison | `head_correlation` | Matched observed torque pairs for two distinct heads. |
 | Explicit KPI counts | `success_rate`, `success_rate_per_head` | Observed events, confirmed cap-present population, success and reject fractions, unknowns, and legacy fraction labelled separately. |
-| Head ordering and peers | `rank_heads_by_success`, `compare_head_success` | Descriptive cap-present success ranking and focus-versus-peer median within one machine/time window. |
+| Head ordering and peers | `rank_heads_by_success`, `compare_head_success` | Descriptive cap-present success ranking and focus-versus-peer median within one machine/time window (any length, including all the data). |
+| Heads per day | `head_success_by_day` | For each calendar day: every head's cap-present success and failure rate, the day's all-heads rates, and its lowest/highest success and failure heads with every tied head listed; partial days are marked. |
 | Time buckets | `kpi_over_time`, `observed_throughput` | Hourly/daily counts and rates over requested durations, including clipped and empty intervals, plus a separate incremental mean of bucket rates. |
 | All-head No Load | `machine_idle` | Candidate intervals where every raw status reading is No Load for the configured sustained duration. |
 
@@ -296,23 +335,27 @@ Then check that Ollama is running and the chosen tag appears in `ollama list`, a
 
 ## Claude planner (everyday wording)
 
-The rules only recognise the documented phrasings. `--planner claude` sends the question to the Anthropic API, where Claude chooses among **all twelve registered tools** and their arguments. "How hard did spindle 5 tighten caps on February 1st?" becomes `torque_stats` for `H05`, `2026-02-01T00:00:00` to `2026-02-02T00:00:00`, without the exact vocabulary. Relative days ("yesterday", "this morning") get a clarification question when the pool spans more than one day, because recorded data has no "today".
+The rules only recognise the documented phrasings. `--planner claude` sends the question to the Anthropic API, where Claude chooses among **all thirteen registered tools** and their arguments. "How hard did spindle 5 tighten caps on February 1st?" becomes `torque_stats` for `H05`, `2026-02-01T00:00:00` to `2026-02-02T00:00:00`, without the exact vocabulary. Relative days ("yesterday", "this morning") get a clarification question when the pool spans more than one day, because recorded data has no "today".
 
 | Entry point | Default planner |
 | --- | --- |
 | CLI `scripts.demo_agent` | `rules` (pass `--planner claude`) |
 | Website `scripts/web_demo.py` | `claude` when `ANTHROPIC_API_KEY` is set, otherwise the deterministic `diagnostic` rules; switch in the sidebar or set `AROL_PLANNER` |
 
+After the tools run, a second request gives Claude the question and the computed results, and Claude writes the **direct answer** and picks its form (sentence, per-head table, head x day table, per-day table, interval table or chart). Claude is told to answer only what was asked and to use only numbers from the results. Every number in its answer is then checked against the results (rounding allowed); if any is not found, the built-in answer is shown instead and the trace says why. Set `agent.claude.answer_from_results: false` to skip this request and always use the built-in answer.
+
+Rankings and comparisons without a time reference ("which head is the worst?", "the highest success rate overall") cover all the data; questions per day ("each head on each day", "the lowest error rate each day") use `head_success_by_day`.
+
 What stays the same:
 
-- Tools compute every number. Claude's text is used only as a clarification question, never as a finding.
+- Tools compute every number. Claude chooses tools, asks clarification questions and words the answer; it never supplies a number the tools did not return.
 - Every proposal is validated before data is loaded: the tool must be registered, the argument names must be known, heads must be canonical (`H05`) and present in the pool, timestamps naive (`YYYY-MM-DDTHH:MM:SS`) with start before end and overlapping the data, `bins` between 1 and 200, and the tool combination must be supported. Invalid proposals are rejected, never repaired. Settings the tools do not accept (sigma, window lengths, thresholds) get a clarification instead of being silently ignored.
 - Each report has an **`Interpreted as:`** line, so you can check what Claude understood. The model that answered and its token usage are in the trace.
-- Sent to Anthropic: the system prompt, the tool descriptions, the question text (which may contain machine IDs), and the pool's machine ID, head list and time range. Telemetry rows and tool results stay local.
+- Sent to Anthropic for planning: the system prompt, the tool descriptions, the question text (which may contain machine IDs), and the pool's machine ID, head list and time range. For the answer: the question, the interpretation and the computed tool results (counts and rates per head, day or interval; long series shortened). Raw telemetry rows are never sent. With `answer_from_results: false`, tool results stay local.
 - If no key is configured or the API is unreachable, overloaded or rejects the key, the deterministic `diagnostic` rules answer instead and the trace shows `claude->rules (fallback)`. Other API errors (for example a wrong model name) are reported as a clarification rather than hidden behind the rules. Each attempt times out after 30 s with one retry.
 - Questions longer than 1,000 characters are refused before any API call.
 
-Setup: put your key in the `ANTHROPIC_API_KEY` environment variable. Never put it in `config.yaml` or a committed file. On Windows: *Edit environment variables for your account* > *New*, then open a new terminal. Settings live in `config.yaml` under `agent.claude` (model `claude-opus-5-5`, `effort: low`, `fallback_to_rules: true`).
+Setup: put your key in the `ANTHROPIC_API_KEY` environment variable. Never put it in `config.yaml` or a committed file. On Windows: *Edit environment variables for your account* > *New*, then open a new terminal. Settings live in `config.yaml` under `agent.claude` (model `claude-opus-5-5`, `effort: low`, `fallback_to_rules: true`, `answer_from_results: true`).
 
 ```bash
 .venv/bin/python -m scripts.demo_agent --planner claude --question "which spindle had the worst success rate on February 2nd?"
@@ -325,7 +368,9 @@ Evidence, measured on a pool built from the first three daily files of February 
 - `scripts.verify_claude_paraphrases` asks 16 everyday-language questions to both planners (planning only, no data loaded). Claude chose the expected tools and scope for **16/16**. The rules managed **2/16**: the two questions whose correct answer is a clarification, and none of the 14 that should run. See `benchmarks/integration/claude_paraphrases_20261013-175952.json` (about $0.09).
 - `scripts.verify_claude_end_to_end` runs 24 questions through the whole pipeline (planning, data loading, tools, report): typos, Italian, supported pairs, KPI/idle/throughput questions, relative days, out-of-range dates and heads, a prompt-injection attempt, an unsupported setting and an oversized histogram. **24/24** passed, and every "should ask" case was answered by Claude asking rather than by the validator catching a bad plan. See `benchmarks/integration/claude_end_to_end_20261013-175911.json` (about $0.17).
 
-The system prompt and tool list are cached, so one question costs well under one cent after the first.
+The system prompts and tool list are cached. Planning alone costs well under one cent; the answer request also carries the tool results, so a question typically costs a few cents (both requests' token counts are in the trace). The evidence above predates the answer step and covers planning and the pipeline, not the answer wording.
+
+**Direct-answer audit (2026-10-19).** Eleven everyday questions were run through Claude on the shared Feb 1-5 data before and after the answer step. Before it, none was answered directly (for example "how many rejects did head 22 have on Feb 3?" showed `0.049685% (3/6,038)` in a list) and two failed ("highest success rate overall" exceeded the event limit; "which head is the worst?" asked for a time window). After it, all eleven were answered in the asked form ("H22 had 3 rejects on 2026-02-03"; a 36 x 6 head-by-day table for "performance of each head on each day"), and every Claude-written number passed the check.
 
 ## Data definitions and limits
 
@@ -335,7 +380,9 @@ The system prompt and tool list are cached, so one question costs well under one
 | Counter jump/decrease | A measured discontinuity; no missing individual closures are synthesized and no reset cause is assumed. |
 | Successful closure | Status `0` in the decoded event schema. |
 | Confirmed cap-present success rate | Successful, confirmed cap-present observed events divided by all confirmed cap-present observed events in the selected scope. Unknown cap presence is counted separately. |
-| Per-head failure rate | The rules question `show me the failure rate for each head` uses the confirmed cap-present rejection flag rate: `reject_signal=True` and `cap_present=True` divided by all confirmed cap-present observed events for each head. No Load and unknown cap presence are counted separately, not silently treated as failed caps. With no requested scope it summarizes the full selected pool. |
+| Failure (error, reject) rate | `show me the failure rate for each head` (also "error rate", "reject rate") uses the confirmed cap-present rejection flag rate: `reject_signal=True` and `cap_present=True` divided by all confirmed cap-present observed events for each head. No Load and unknown cap presence are counted separately, not silently treated as failed caps. With no requested scope it summarizes the full selected pool. Questions worded with failure, error, reject or defect (and not success) are answered failure-first: answer, tables, key figures and charts show the failure rate, taken from the tools' rejection counts (never computed as 100% minus success). |
+| Best and worst | "Lowest", "least", "fewest" or "best" error rate asks for the best end (lowest failure); "highest" or "most" errors and "lowest success" for the worst end; "best"/"worst" said outright win, and no direction means the worst end. When several heads share the answer value (for example many heads at 0% failure on a day), the answer says how many share it and lists them instead of naming one. |
+| Per-day head results | Calendar days of the recorded clock (UTC), 00:00 to 24:00, each analysed separately. A day the data covers for less than 23 hours is marked partial; AROL's daily files run 16:00 to 15:59, so the first and last day of a pool are usually partial. Heads with fewer than `analytics.min_n` (30) cap-present closures on a day are not ranked that day, and days on which every head ties do not count towards "most often". |
 | No Load fraction | No Load class observed events divided by all observed events in the same scope. This differs from the cap-present success rate. |
 | Observed throughput | Observed event count divided by the **requested** interval duration; includes partial requested buckets. |
 | Torque population | Torque statistics, histograms, trends, anomaly checks and head correlation describe **closures**: No Load cycles (head cycled without a cap, about 0 Nm) are excluded by default because they made a third of a real day's events "anomalies" and pulled the mean from about 2.0 to 1.34 Nm. Ask for `all_statuses` ("including No Load") to include them. Every report states the population used. |
@@ -350,6 +397,7 @@ An empty time bucket means no **recorded** events there; it does not prove a mac
 
 ```text
 config.yaml                 Shared configuration and illustrative thresholds
+app/                        Hosted website entry point, code refresh after deploys, host requirements
 requirements*.txt           Pinned runtime, test (-dev), website (-web) and full lock (-lock)
 .github/workflows/          CI: tests and evaluations on Python 3.12/3.14, Linux/Windows
 src/ingestion/              CSV validation, event detection, partitioned pool
@@ -364,7 +412,7 @@ docs/                       Demo, methods, audit and integration notes
 data/                       Local raw files, pools and generated reports (ignored)
 ```
 
-Start with [the demo guide](docs/DEMO.md) for presentation commands and [the 13-slide deck and rehearsal notes](docs/presentation/README.md). The [evaluation guide](docs/EVALUATION.md) describes the controlled methodology. The [methods and limits](docs/METHODS-AND-LIMITS.md) explain event identity, denominators, idle status and speed. See [the implementation audit](docs/PROJECT-AUDIT.md), [the integration tracker](docs/INTEGRATION-TRACKER.md), and [the event contract](docs/contract.md) for design decisions and boundaries. The [Person A](docs/PERSON-A-REFERENCE.md), [Person B](docs/PERSON-B-REFERENCE.md), and [integration](docs/INTEGRATION-REFERENCE.md) references provide function-by-function review guides; the Person A/B documents distinguish their original standalone work from the merged code.
+Start with [the demo guide](docs/DEMO.md) for presentation commands and [the 13-slide deck and rehearsal notes](docs/presentation/README.md). [Hosting](docs/HOSTING.md) covers the Streamlit, Supabase and upload setup. The [evaluation guide](docs/EVALUATION.md) describes the controlled methodology. The [methods and limits](docs/METHODS-AND-LIMITS.md) explain event identity, denominators, idle status and speed. See [the implementation audit](docs/PROJECT-AUDIT.md), [the integration tracker](docs/INTEGRATION-TRACKER.md), and [the event contract](docs/contract.md) for design decisions and boundaries. The [Person A](docs/PERSON-A-REFERENCE.md), [Person B](docs/PERSON-B-REFERENCE.md), and [integration](docs/INTEGRATION-REFERENCE.md) references provide function-by-function review guides; the Person A/B documents distinguish their original standalone work from the merged code.
 
 ## Troubleshooting
 
@@ -374,12 +422,15 @@ Start with [the demo guide](docs/DEMO.md) for presentation commands and [the 13-
 | `Output directory already exists` | Choose a new `--output` directory; the builder does not overwrite a prior build. |
 | Missing or invalid manifest | Build a complete event pool or pass the correct path to `--manifest`. A fresh Git checkout has no private pool. |
 | More than one pool present | Pass `--manifest data/event_pools/<pool>/manifest.json` explicitly. |
-| Scope too large | Restrict the machine, head or time window (only row-level tools have this limit). Peer comparisons need all selected peers. |
+| Scope too large | Restrict the machine, head or time window (only row-level tools have this limit: histogram, trend, anomalies, time buckets, idle). Totals, rankings, peer comparisons and per-day head results have no limit. |
+| Upload refused: "Timestamps go backwards" or "already in the event pool" | Shared days must be added in date order and only once. To add an earlier day, the shared data has to be cleared and refilled in order; to study a file without saving it, use *My own CSV files*. |
+| Hosted site shows an error after a push | The site reloads changed code by itself; if an error persists, use *Manage app* > *Reboot* once. Upload attempts and errors are in the app logs (`[stored upload]`, `[session upload]`). |
+| Answer box says it was written from the computed results, not by Claude | Claude's answer contained a number not found in the results, or `answer_from_results` is off; the trace note says which. The built-in answer is shown instead. |
 | Clarification needed / no tool calls | Give a supported telemetry analysis and explicit scope; the agent intentionally does not answer general questions or infer fault causes. |
 | `pytest` import mismatch in backups | Run `.venv/bin/python -m pytest tests -q` from the root rather than discovering tests inside `data/`. |
 | Local LLM unavailable | Verify Ollama is running and `ollama list` includes the configured model; use `--planner rules` for the verified default route. |
 | Report says `claude->rules (fallback)` | Claude could not be reached. The trace note gives the reason; most often `ANTHROPIC_API_KEY` is not set in *this* terminal (open a new one after setting it), there is no internet, or the key was rejected. |
 | "The Claude planner is misconfigured" | The API rejected the request (for example a wrong `agent.claude.model`). Fix the setting; the rules are deliberately not used to hide this. |
-| Website stops with a manifest error | Set `AROL_MANIFEST=data/event_pools/<pool>/manifest.json`, or keep exactly one pool under `data/event_pools/`. |
+| Website stops with a manifest error | Set `AROL_MANIFEST=data/event_pools/<pool>/manifest.json`, or keep exactly one pool under `data/event_pools/`, or choose another source under *Data to analyse*. |
 
 For reproducible reviews, record the Git commit, selected manifest, question, generated report, trace, and exact test/evaluation command. Real-data verification records are under `benchmarks/integration/`; generated session data under `data/` stay local.

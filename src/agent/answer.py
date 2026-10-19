@@ -222,6 +222,19 @@ def deterministic_sentence(query, plan, results, meta):
                 f"{_pct(focus_row.get('success_rate_cap_present'), 4)} against a median of "
                 f"{_pct(c.get('peer_median_success_rate'), 4)} for the other heads, and "
                 f"{a['anomaly_count']:,} of its {a['sample_size']:,} torque readings were flagged.")
+    if {"torque_stats", "torque_distribution"} <= set(names):
+        s = found["torque_stats"]
+        if not s["sample_size"]:
+            return f"No torque readings matched for {who} {when}."
+        return (f"The average torque of {who} {when} was {s['mean']:.3f} Nm over {s['sample_size']:,} closures "
+                f"(minimum {s['min']:.3f} Nm, maximum {s['max']:.3f} Nm); the histogram is below.")
+    if {"torque_trend", "detect_torque_anomalies"} <= set(names):
+        t, a = found["torque_trend"], found["detect_torque_anomalies"]
+        drift = (f"drifted {t['drift_direction']} at {t['drift_slope_nm_per_hour']:.4f} Nm per hour"
+                 if t.get("drift_detected") else
+                 f"did not drift (slope {(t.get('drift_slope_nm_per_hour') or 0):.4f} Nm per hour)")
+        return (f"{_cap(when)}, the torque of {who} {drift}, and {a['anomaly_count']:,} of its "
+                f"{a['sample_size']:,} readings were flagged as anomalies.")
     name, r = ok[-1] if names[-1] in TOOL_ARTIFACTS else ok[0]
     if name in ("success_rate", "success_rate_per_head") and names[0] == "success_rate" and "success_rate" in found:
         name, r = "success_rate", found["success_rate"]
@@ -311,8 +324,9 @@ def deterministic_sentence(query, plan, results, meta):
         if not periods:
             return f"The machine had no idle period {when} (no stretch where every head ran without a cap)."
         longest = max(periods, key=lambda p: p["duration_seconds"])
-        return (f"The machine had {r['n_periods']} idle period(s) {when} (all heads without a cap); the longest "
-                f"lasted {longest['duration_seconds']:,} seconds, from {longest['start']} to {longest['end']}.")
+        count = "1 idle period" if r["n_periods"] == 1 else f"{r['n_periods']} idle periods"
+        return (f"The machine had {count} {when} (all heads without a cap); the longest lasted "
+                f"{longest['duration_seconds']:,} seconds, from {longest['start']} to {longest['end']}.")
     return "The analysis finished; see Details for the full result."
 
 

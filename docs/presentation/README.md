@@ -24,6 +24,12 @@ window. Keep those populations distinct when presenting.
 6. End with the measured test/evaluation scope and the unresolved physical
    interpretation, counter discontinuities and timestamp timezone.
 
+The deck predates the hosted website, shared uploads, per-day head results and
+direct answers (2026-10-19). To show them live, use the run-through in
+[`docs/DEMO.md`](../DEMO.md#presenting-with-the-hosted-website): each question
+there shows a different answer form, and *Show details for further
+investigation* leads back to the report and trace described in step 2.
+
 Before presentation on the actual Mac checkout, run
 `.venv/bin/python -m pytest tests -q`, then a short `--plots` demo from
 `docs/DEMO.md`. Verify that the PPTX opens, the chart PNGs appear, and the

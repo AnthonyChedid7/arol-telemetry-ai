@@ -54,3 +54,7 @@ agent:
     max_retries: 1
     max_question_chars: 1000 # longer questions are refused before any API call
     fallback_to_rules: true  # only when Claude is unreachable; misconfiguration is reported
+    # Claude also words the direct answer from the computed results (counts and
+    # rates, never raw rows), sent in a second request; every number is checked.
+    # false: results stay local and the built-in answer is shown.
+    answer_from_results: true

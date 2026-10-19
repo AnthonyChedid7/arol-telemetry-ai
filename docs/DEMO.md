@@ -58,27 +58,56 @@ The CLI defaults to deterministic rules. `--planner diagnostic` adds a
 head-health answer from registered peer-success and torque-anomaly results.
 It requires an explicit machine and bounded time window in the CLI. The web
 demo shows its selected machine and can use it for this diagnostic; an
-unbounded question asks for a window before loading data. The page displays
-the short evidence-based answer, detailed report, trace, and tool results.
+unbounded question asks for a window before loading data. The page shows the
+direct answer first; the evidence-based diagnostic, detailed report, trace and
+tool results are behind *Show details for further investigation*.
 `--planner llm` remains an experimental single-tool torque planner. Its
 existing scope validator rejects head-health and KPI questions; the web demo
 does not present it as a general answer mode.
 
 `--planner claude` (and the website's default when `ANTHROPIC_API_KEY` is set)
 lets Claude read everyday wording, such as "is spindle 4 behaving normally on
-Feb 1 between 9 and 10?", and choose among all registered tools. Check the
-report's "Interpreted as" line. Without a key or internet, the deterministic
-rules answer and the trace says `claude->rules (fallback)`. For a reliable
-live demo, set the key in the terminal that starts Streamlit and keep the
-rules switch in the sidebar as the offline backup.
+Feb 1 between 9 and 10?", and choose among all registered tools, then words
+the direct answer from the computed results (every number checked; see the
+README). Check the report's "Interpreted as" line. Without a key or internet,
+the deterministic rules answer and the trace says `claude->rules (fallback)`.
+For a reliable live demo, set the key in the terminal that starts Streamlit (or
+in the hosted app's Secrets) and keep the rules switch in the sidebar as the
+offline backup.
 
 The event source caps loaded rows using `data.max_loaded_events` (default
-1,000,000). A broad request asks for narrower scope without collecting the
-entire 54,722,936-event pool. Capping KPIs report explicit cap-present
-denominators and unknowns. Throughput measures recorded exact +1 events per
-requested duration; it does not measure total physical production, sensor
-coverage, operating time, downtime, or fault causes. Timestamps use stored
-naive values; their timezone and daylight-saving semantics are unconfirmed.
+1,000,000) for tools that need individual rows (histogram, trend, anomalies,
+time buckets, idle); a broad request for those asks for narrower scope without
+collecting the entire 54,722,936-event pool. Totals, head rankings, peer
+comparisons and per-day head results have no such cap: they are aggregated
+while scanning, per-day results one day at a time. Capping KPIs report explicit
+cap-present denominators and unknowns. Throughput measures recorded exact +1
+events per requested duration; it does not measure total physical production,
+sensor coverage, operating time, downtime, or fault causes. Timestamps are used
+exactly as stored; the team contract defines them as UTC, and no timezone or
+daylight-saving conversion is applied.
+
+## Presenting with the hosted website
+
+The hosted site (see [HOSTING.md](HOSTING.md)) answers in plain words with the
+owner's key. A run-through that shows each answer form, verified on the shared
+Feb 1-5 data with Claude on 2026-10-19:
+
+| Ask | Expect |
+| --- | --- |
+| can you now give me the performance of each head please on each day? | One sentence, then a table of all 36 heads on each of the 6 days plus an *All heads* row |
+| give me the highest success rate overall | "10 heads tied for the highest success rate at 100% ..." with the heads named |
+| plot the success rate of each head | One sentence and the per-head chart |
+| how many rejects did head 22 have on Feb 3? | "H22 had 3 rejects on 2026-02-03 ..." |
+| give me the lowest error rates on each day | 0% on every day, shared by 19 to 36 heads, with a per-day table |
+| which head has the lowest success rate for each day? | The lowest head per day, ties stated |
+
+Then open *Show details for further investigation* to show the key figures,
+the full six-section report, the trace and the downloads. To show uploads,
+choose *My own CSV files (this session only)* and load one daily CSV: it is
+analysed for that session only and never added to the shared data. Switch
+*Question understanding* to *Rules only* to show the offline backup (it
+answers the documented phrasings, such as the example list).
 
 For a fresh checkout with the original CSVs available locally, build a pool
 once with `python -m scripts.build_event_pool --help`; do not put raw telemetry

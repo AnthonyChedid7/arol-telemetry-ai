@@ -4,6 +4,8 @@ This is a code review reference for the integrated source. Its existing function
 
 > **Line references updated 2026-10-13** against the `audit-followups` branch: every `file#Lnn` link below points at the current definition (`parse_intent` no longer exists). Later behaviour changes from the audit (Claude planner, closures-only torque population, drift threshold, cap-present denominator for head comparison, lazy whole-pool totals) are described in the README and `AUDIT-REPORT.md`.
 
+> **Update 2026-10-19 (`pro-ui`).** Added since the line references above: per-day head results, a direct-answer step, the website's data sources and daily uploads with a shared store, and code reloading on the host. New and changed functions are listed in [Additions on pro-ui](#additions-on-pro-ui-2026-10-19) with current line numbers. Line numbers in the older entries of `src/ingestion/event_pool.py`, `src/agent/report.py`, `src/agent/planner.py`, `src/agent/orchestrator.py`, `src/agent/claude_planner.py`, `src/common/event_pool_source.py`, `src/interface/dashboard.py`, `src/interface/plots.py` and `scripts/web_demo.py` have shifted; the function names are unchanged.
+
 ## End-to-end workflow
 
 ```mermaid
@@ -377,6 +379,61 @@ Smoke check of demo CLI on real scoped telemetry against direct expected statist
 
 - **`sha256`** ([`scripts/verify_demo_agent.py`](../scripts/verify_demo_agent.py#L17), line 17): Hash a file to tie independent verification evidence to an exact input or output. **Parameters:** `path`. **Return contract:** `not annotated`; see the implementation for structured fields and error cases.
 - **`main`** ([`scripts/verify_demo_agent.py`](../scripts/verify_demo_agent.py#L21), line 21): Parse command-line arguments and invoke the module's CLI workflow; return a process exit status. **Parameters:** `argv`. **Return contract:** `not annotated`; see the implementation for structured fields and error cases.
+
+## Additions on pro-ui (2026-10-19)
+
+### `src/analytics/registered_daily_kpi.py`
+
+- **`head_success_by_day`** ([line 149](../src/analytics/registered_daily_kpi.py#L149)): registered tool. For each calendar day in the scope, one lazy aggregation per day; per-head cap-present success and rejection counts and rates, the day's all-heads rates, and the lowest/highest success and failure heads with every tied head (`*_tied_heads`, `n_tied_*`). Heads below `analytics.min_n` are not ranked that day; partial days are flagged. **Parameters:** `events`, optional `machine_id`, `start`, `end`. Refuses more than one machine and more than `analytics.max_time_buckets` days.
+- **`daily_view`** ([line 58](../src/analytics/registered_daily_kpi.py#L58)): maps the plan's `focus`/`extreme` to the pick to present and its counterpart (used by the report, plots and key figures).
+
+### `src/agent/answer.py`
+
+- **`choose_artifact`** ([line 60](../src/agent/answer.py#L60)): the form the wording asks for (`none`, `chart`, `head_table`, `head_day_table`, `day_table`, `interval_table`) and the metric.
+- **`render_table`** ([line 102](../src/agent/answer.py#L102)): Markdown table for that form, rendered from tool results only.
+- **`deterministic_sentence`** ([line 207](../src/agent/answer.py#L207)): built-in answer sentence per tool.
+- **`unmatched_numbers`** ([line 358](../src/agent/answer.py#L358)): numbers in a proposed answer that no tool result (or the question) supports; dates, times and identifiers are excluded, rounding to the written precision is allowed.
+- **`compact_results`** ([line 396](../src/agent/answer.py#L396)): tool results as compact JSON for the answer writer (long series shortened).
+- **`compose`** ([line 418](../src/agent/answer.py#L418)): the answer for the orchestrator. Built-in sentence and form, replaced by `planner.compose_answer` when every number checks out.
+
+### `src/agent/claude_planner.py`
+
+- **`ClaudePlanner.compose_answer`** ([line 378](../src/agent/claude_planner.py#L378)) and **`_call_answer`** ([line 363](../src/agent/claude_planner.py#L363)): second request with `ANSWER_PROMPT` and the `give_answer` tool; returns `{sentence, artifact, metric}` or `None`. Disabled by `agent.claude.answer_from_results: false`.
+
+### `src/agent/report.py`, `src/agent/planner.py`, `src/agent/orchestrator.py`
+
+- **`Plan.focus`** and **`Plan.extreme`** ([planner.py lines 40-43](../src/agent/planner.py#L40)): presentation settings (`"failure"`; `"best"`/`"worst"`).
+- **`rate_focus`** ([line 60](../src/agent/report.py#L60)) and **`rate_extreme`** ([line 38](../src/agent/report.py#L38)): read them from the wording for any planner; the orchestrator sets them when the planner did not.
+- **`assemble`** ([line 530](../src/agent/report.py#L530)): new `answer` parameter; the report starts with an `## Answer` section.
+- `Orchestrator.answer` returns `answer` next to `markdown`, `results`, `plan` and `trace`.
+
+### `src/agent/daily_kpi_routing.py`
+
+- **`parse_daily_kpi_request`** ([line 26](../src/agent/daily_kpi_routing.py#L26)): rules route for per-day head questions (each/every/per day, daily) with optional `for machine` and `from ... until ...`.
+
+### `src/ingestion/event_pool.py`
+
+- **`append_to_event_pool`** ([line 309](../src/ingestion/event_pool.py#L309)): adds one CSV as the next partition of a complete pool; equal to building the pool with that file last. **`_carry_state`** ([line 289](../src/ingestion/event_pool.py#L289)) re-derives the head set and counter baseline from the stored raw partition. `build_event_pool` ([line 222](../src/ingestion/event_pool.py#L222)) now shares `_build_partition` and `_accumulate` with it.
+
+### `src/common/pool_store.py`
+
+- **`LocalStore`**, **`SupabaseStore`** ([lines 40, 67](../src/common/pool_store.py#L40)): folder or private Supabase bucket (REST API; `sb_secret_` keys in the `apikey` header).
+- **`store_from_env`** ([line 112](../src/common/pool_store.py#L112)): `SUPABASE_URL`/`SUPABASE_KEY`, else `AROL_STORE_DIR`, else none.
+- **`pull`** ([line 149](../src/common/pool_store.py#L149)): mirror the stored pool locally, checking event hashes.
+- **`add_csv`** ([line 187](../src/common/pool_store.py#L187)) and **`add_uploaded_csv`** ([line 269](../src/common/pool_store.py#L269)): add one daily CSV (new pool or append), push partitions then the manifest, refuse concurrent changes.
+- **`build_session_pool`** ([line 221](../src/common/pool_store.py#L221)) and **`prune_folders`** ([line 256](../src/common/pool_store.py#L256)): throwaway per-session pools.
+
+### `src/common/event_pool_source.py`
+
+- `SUPPORTED_TOOLS` includes `head_success_by_day`; `LAZY_AGGREGATE_TOOLS` ([line 22](../src/common/event_pool_source.py#L22)) adds `head_success_by_day`, `rank_heads_by_success` and `compare_head_success`.
+
+### `app/` and `scripts/`
+
+- **`app/module_refresh.py`**: `install_import_stamps` ([line 59](../app/module_refresh.py#L59)) records each project module's file version at import; `drop_changed_project_modules` ([line 118](../app/module_refresh.py#L118)) drops all project modules, namespace packages included, when any is older than its file. `app/streamlit_app.py` runs it on every page load.
+- **`scripts/web_demo.py`**: data-source choice, session uploads, shared uploads, answer-first result with details toggle.
+- **`scripts/check_storage.py`** ([`main`, line 19](../scripts/check_storage.py#L19)): write/read round trip against the configured store.
+
+Tests: `tests/test_daily_head_kpi.py`, `tests/test_answer.py`, `tests/test_pool_store.py`, `tests/test_web_sources.py`, `tests/test_module_refresh.py`, plus additions in `tests/test_event_pool.py` and `tests/test_explicit_kpi.py`.
 
 ## Worked review path
 

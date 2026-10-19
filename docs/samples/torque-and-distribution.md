@@ -1,7 +1,11 @@
 # Telemetry report
 
 *Query:* Summarize torque and show its distribution with 10 bins for machine DEMO from 2026-02-01T00:00:00 until 2026-02-01T00:06:40 for head 1 for successful closures
-*Generated:* 2026-10-13 20:32  |  *Planner:* rules  |  *Schema:* 1.0
+*Generated:* 2026-10-19 19:32  |  *Planner:* rules  |  *Schema:* 1.0
+
+## Answer
+
+The average torque of head H01 from 2026-02-01T00:00:00 to 2026-02-01T00:06:40 was 2.024 Nm over 90 closures (minimum 1.960 Nm, maximum 2.800 Nm); the histogram is below.
 
 ## 1. Goal
 
@@ -9,7 +13,7 @@ Run torque_stats and torque_distribution within the explicitly requested event s
 
 ## 2. Data used
 
-- Pool `sample` from the **person_a_pool** source, 90 closure events across 1 heads.
+- Pool `sample` from the **person_a_pool** source, 90 observed exact +1 events across 1 heads.
 - Window 2026-02-01T00:05:10 to 2026-02-01T00:06:39 (clock: as recorded; timezone unconfirmed).
 - Machines: DEMO.
 - Events loaded for the requested scope: 90 of 798 stored observed events in this pool.
@@ -18,9 +22,9 @@ Run torque_stats and torque_distribution within the explicitly requested event s
 
 ## 3. Analyses executed
 
-- `torque_stats` (agent: analytics) - n=90, 4.11 ms - ok
+- `torque_stats` (agent: analytics) - n=90, 3.72 ms - ok
   - filters: population: successful closures only (status 0), start>=2026-02-01T00:00:00, end<2026-02-01T00:06:40, head_id in ['H01'], machine_id=DEMO, torque is non-null and finite
-- `torque_distribution` (agent: analytics) - n=90, 6.39 ms - ok
+- `torque_distribution` (agent: analytics) - n=90, 4.02 ms - ok
   - filters: population: successful closures only (status 0), start>=2026-02-01T00:00:00, end<2026-02-01T00:06:40, head_id in ['H01'], machine_id=DEMO, torque is non-null and finite
 
 ## 4. Findings
@@ -55,14 +59,14 @@ Run torque_stats and torque_distribution within the explicitly requested event s
 
 ## Trace
 
-2 tool call(s), 56 ms total.
+2 tool call(s), 79 ms total.
 
 | # | step | tool | n | ms | ok |
 |---|------|------|---|----|----|
 | 0 | plan |  |  |  | yes |
 | 1 | load_pool |  |  |  | yes |
-| 2 | tool_call | torque_stats | 90 | 4.11 | yes |
-| 3 | tool_call | torque_distribution | 90 | 6.39 | yes |
+| 2 | tool_call | torque_stats | 90 | 3.72 | yes |
+| 3 | tool_call | torque_distribution | 90 | 4.02 | yes |
 | 4 | validate |  |  |  | yes |
 
 ## Figures

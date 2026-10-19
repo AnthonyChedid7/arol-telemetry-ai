@@ -1,7 +1,11 @@
 # Telemetry report
 
 *Query:* Machine idle for machine DEMO from 2026-02-01T00:00:00 until 2026-02-01T00:06:40
-*Generated:* 2026-10-13 20:32  |  *Planner:* rules  |  *Schema:* 1.0
+*Generated:* 2026-10-19 19:32  |  *Planner:* rules  |  *Schema:* 1.0
+
+## Answer
+
+The machine had 1 idle period from 2026-02-01T00:00:00 to 2026-02-01T00:06:40 (all heads without a cap); the longest lasted 310 seconds, from 2026-02-01T00:00:00 to 2026-02-01T00:05:10.
 
 ## 1. Goal
 
@@ -17,7 +21,7 @@ Identify observed intervals with No Load on every head for the configured sustai
 
 ## 3. Analyses executed
 
-- `machine_idle` (agent: analytics) - n=400, 3.22 ms - ok
+- `machine_idle` (agent: analytics) - n=400, 1.33 ms - ok
   - filters: machine_id=DEMO, start>=2026-02-01T00:00:00, end<2026-02-01T00:06:40, every head status decodes as No Load; uninterrupted 1s samples
 
 ## 4. Findings
@@ -42,13 +46,13 @@ Identify observed intervals with No Load on every head for the configured sustai
 
 ## Trace
 
-1 tool call(s), 1469 ms total.
+1 tool call(s), 16 ms total.
 
 | # | step | tool | n | ms | ok |
 |---|------|------|---|----|----|
 | 0 | plan |  |  |  | yes |
 | 1 | load_pool |  |  |  | yes |
-| 2 | tool_call | machine_idle | 400 | 3.22 | yes |
+| 2 | tool_call | machine_idle | 400 | 1.33 | yes |
 | 3 | validate |  |  |  | yes |
 
 ## Figures

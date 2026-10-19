@@ -1259,3 +1259,13 @@ review and presentation preparation.
 - Added real-schema regression and fractional-status rejection tests. Snapshot
   suite: 858 passed, 4 standalone-repository skips. The bounded original-CSV
   comparison must be repeated on the user's Mac after installing this fix.
+
+## Hosted website, shared uploads, per-day heads and direct answers (2026-10-19, `pro-ui`)
+
+- Website hosted on Streamlit Community Cloud from the fork `AnthonyChedid7/arol-telemetry-ai` (the original repository is a personal repository, where only the owner can deploy). The owner's Anthropic key, Supabase settings and an upload password are Streamlit Secrets.
+- Shared data: daily CSVs appended with `append_to_event_pool` (equal to a full build; verified on the real Feb 1-5 files) and kept in a private Supabase bucket via `src/common/pool_store.py`; partitions are written before the manifest; the site re-reads the store at most once a minute. Session-only uploads build a throwaway pool per browser session.
+- `head_success_by_day`: per-day head results, one lazy aggregation per day (10 M real events over 15 days in about 7 s); ties listed; partial days flagged. `rank_heads_by_success` and `compare_head_success` are aggregated while scanning (no event limit).
+- Direct answers (`src/agent/answer.py`): sentence plus the asked form (chart, head x day table, per-head table, per-day table, interval table, or sentence). Claude may word it from the computed results; any number not found in the results rejects Claude's wording. An 11-question audit went from 0 direct answers (2 failures) to 11 direct answers.
+- Presentation from wording: failure/error focus and best/worst direction (`Plan.focus`, `Plan.extreme`).
+- `app/module_refresh.py`: changed project modules (namespace packages included) are re-imported after a deploy, using import-time file stamps; found after a live `AttributeError` caused by a half-pulled deploy.
+- Suite: 1,028 passed, 4 skipped (Windows, Python 3.14.3).

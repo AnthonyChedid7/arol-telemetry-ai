@@ -1,5 +1,7 @@
 # Study: switching the agent from Ollama to the Anthropic API
 
+> **Update 2026-10-19 (`pro-ui`).** This study describes planning only. Since then a second Claude request words the direct answer from the computed tool results (counts and rates; raw telemetry rows are never sent), and every number in that answer is checked against the results. The statements below that only the question text goes to Anthropic, and the cost "well under one cent", apply to planning; with the answer request a question typically costs a few cents. `agent.claude.answer_from_results: false` restores planning-only. Current behaviour: README, *Claude planner*.
+
 Branch: `claude-planner` (cloned from `EddyKhoury/arol-telemetry-ai`, commit `93b4a6d`).
 
 > **Status: Option B implemented.** New planner in `src/agent/claude_planner.py`. Results:
