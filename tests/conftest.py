@@ -17,6 +17,8 @@ def _no_live_model_requests(monkeypatch, tmp_path):
     for name in _CREDENTIALS:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.delenv("AROL_DEMO", raising=False)
+    # Nor a local Ollama on this computer: a closed port, unless a test mocks one.
+    monkeypatch.setenv("AROL_OLLAMA_HOST", "http://127.0.0.1:9")
     # A developer's own .env must not leak a key (or a demo switch) into tests.
     from src.common import config
     monkeypatch.setattr(config, "DOTENV", tmp_path / "no.env")

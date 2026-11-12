@@ -1,6 +1,6 @@
 # AROL Telemetry AI
 
-An industrial telemetry analysis project for an AROL capping machine. It converts timestamped, per-head counter readings into **observed closure events**, lets a scoped question select registered analyses, and answers it: a **direct answer** in the form the question asked for (a sentence, a table of every head on every day, a per-head table or a chart), followed by a full Markdown report and a JSON execution trace for investigation. The CLI routes questions deterministically by default; a [Claude planner](#claude-planner-everyday-wording) understands everyday wording across all tools and words the answer (the website's default when an Anthropic key is set), and a local Ollama planner is available for a narrower set of torque questions. In every mode the numbers come from deterministic tools, never from a model; any number Claude writes is checked against the tool results.
+An industrial telemetry analysis project for an AROL capping machine. It converts timestamped, per-head counter readings into **observed closure events**, lets a scoped question select registered analyses, and answers it: a **direct answer** in the form the question asked for (a sentence, a table of every head on every day, a per-head table or a chart), followed by a full Markdown report and a JSON execution trace for investigation. The CLI routes questions deterministically by default; a [Claude planner](#claude-planner-everyday-wording) understands everyday wording across all tools and words the answer (the website's default when an Anthropic key is set), and on a computer running Ollama a local model plans the same questions offline (best measured: `qwen2.5-coder:14b`, 18 of 20 everyday questions routed correctly). In every mode the numbers come from deterministic tools, never from a model; any number Claude writes is checked against the tool results.
 
 The [website](#the-website) can be hosted on Streamlit Community Cloud with the owner's key, so testers need only a link; daily AROL CSV files can be added from the browser and are kept in a Supabase bucket ([docs/HOSTING.md](docs/HOSTING.md)).
 
@@ -152,9 +152,11 @@ on 2026-03-10, 2026-03-25 and 2026-04-10; H14 drifts upward on 2026-03-30; H03
 has two 2.8 Nm closures on 2026-03-05; the machine idles 08:20-08:35 on
 2026-03-12. Nothing in them is AROL data.
 
-**Ask a question.** Claude (default when a key is available), the rules
-(*Rules only*), or, when Ollama runs on the same computer, a local model (see
-[Optional local LLM](#optional-local-llm)). The example list follows the chosen data's dates; on real data
+**Ask a question.** *Question understanding* offers **Claude (Anthropic API)**
+and, when Ollama runs on the same computer, **Local model (Ollama, on this
+computer)** (see [Optional local LLM](#optional-local-llm)). There is no separate
+rules choice: without a key (or when a model's plan fails validation) the
+built-in rules answer, and the route line says so. The example list follows the chosen data's dates; on real data
 its windows are 12 hours, because a whole real day (about 1.15 M events) is
 above the row-level event limit. Data with shorter days (such as the test data)
 gets windows inside the hours it covers.
@@ -351,7 +353,18 @@ Then check that Ollama is running and the chosen tag appears in `ollama list`, a
 
 **Important:** `config.local.yaml` is not listed in the current `.gitignore`; keep local machine settings and any secrets out of commits. No API key is required for localhost Ollama. `--planner llm` is an **experimental torque planner** restricted to five verified single-tool torque analyses. Its existing scope validator rejects changed arguments, combined analyses, KPI questions, and head-health questions before data access. Transport fallback to rules, when enabled, is labelled in the trace. The website's head diagnostic is a separate evidence-based route and does not use this LLM mode.
 
-**On the website.** When the page runs on a computer where Ollama answers (at `agent.llm.host`, default `http://localhost:11434`), *Question understanding* offers a third choice, **Local model (Ollama, torque questions)**, with a box listing the installed models, smallest first (so `llama3.2:3b` before `qwen2.5-coder:14b`). Nothing is sent to the internet, and a question it cannot verify is refused, never passed to the rules. The example *Torque statistics for head 5 (works with the local model)* is ready to run. The hosted site has no Ollama next to it, so it does not show the option.
+**On the website.** When the page runs on a computer where Ollama answers (`AROL_OLLAMA_HOST`, else `agent.llm.host`, default `http://localhost:11434`), *Question understanding* offers **Local model (Ollama, on this computer)** with a box listing the installed models, smallest first. This uses the general local planner (`--planner ollama` on the command line): the model gets Claude's instructions and all thirteen tools, and its proposal passes the same validation as Claude's. If it proposes nothing valid, the built-in rules try the question and the route reads `ollama->rules (fallback)`. Answers are the built-in sentences computed from the results. The hosted site has no Ollama next to it, so it does not show the option.
+
+Measured 2026-11-12, 20 everyday questions on the real February data (rates, per-day results, rankings, comparisons, torque, idle, throughput), Ollama on a rented RTX 4090. "Correct" means the right analysis and scope, checked by hand:
+
+| Model | Answered | Correct | Seconds per question | Memory needed |
+| --- | --- | --- | --- | --- |
+| `qwen2.5-coder:14b` | 20 | 18 | 6-7 | about 9 GB |
+| `qwen2.5:7b` | 18 | 15 | about 4 | about 5 GB |
+| `llama3.2:3b` | 16 | 14 | about 2 | about 3 GB |
+| `llama3.1:8b` | 18 | 13 | about 3 | about 5 GB |
+
+Typical misses: "No Load rate of each head" (routed to idle periods or success rate), "how many caps did head 10 close" (machine total instead of one head), and with the smaller models success-rate comparisons sent to the torque correlation tool. Speed depends on the machine: on a laptop without a usable GPU (measured: Intel Iris Xe, 2.5 GB RAM free) even `llama3.2:3b` took over 2 minutes per question, because the instructions and tool list are about 5,000 tokens. For a live demo, run Ollama on a GPU machine and set `AROL_OLLAMA_HOST` to its address. Check the *Interpreted as* line. Phrasing that helps: name the head (`head 5` or `H05`), and for torque, drift and anomaly questions give a window (`from 2026-02-02T00:00:00 until 2026-02-02T12:00:00`).
 
 Questions it accepts (one analysis each, with a head and a date or `from ... until ...` window):
 `Average torque for head 5 on 2026-03-30` (also statistics, summary, minimum, maximum, standard deviation;

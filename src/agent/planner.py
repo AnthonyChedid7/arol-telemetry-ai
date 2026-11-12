@@ -271,4 +271,7 @@ def get_planner(cfg) -> Planner:
     if kind == "claude":
         from .claude_planner import ClaudePlanner
         return ClaudePlanner(cfg)
-    raise ValueError(f"agent.planner must be 'rules', 'diagnostic', 'llm' or 'claude', got {kind!r}")
+    if kind == "ollama":
+        from .ollama_planner import OllamaPlanner
+        return OllamaPlanner(cfg)
+    raise ValueError(f"agent.planner must be 'rules', 'diagnostic', 'llm', 'claude' or 'ollama', got {kind!r}")

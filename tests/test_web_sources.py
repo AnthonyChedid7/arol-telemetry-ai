@@ -110,7 +110,7 @@ def test_local_model_option_only_when_ollama_answers(app, days_store, monkeypatc
     monkeypatch.setattr(urllib.request, "urlopen", no_ollama)
     at = app(AROL_STORE_DIR=str(days_store))
     assert not at.exception
-    assert not any("Ollama" in o for o in at.sidebar.radio(key="planner").options)
+    assert at.sidebar.radio(key="planner").options == ["Claude (Anthropic API)"]
 
     models = {"models": [{"name": "qwen2.5-coder:14b", "size": 9_000_000_000},
                          {"name": "llama3.2:3b", "size": 2_000_000_000}]}
@@ -118,7 +118,7 @@ def test_local_model_option_only_when_ollama_answers(app, days_store, monkeypatc
     monkeypatch.setattr(urllib.request, "urlopen",
                         lambda request, timeout=0: Reply(json_mod.dumps(models).encode()))
     at = app(AROL_STORE_DIR=str(days_store))
-    label = "Local model (Ollama, torque questions)"
+    label = "Local model (Ollama, on this computer)"
     assert label in at.sidebar.radio(key="planner").options
     at.sidebar.radio(key="planner").set_value(label).run()
     assert not at.exception

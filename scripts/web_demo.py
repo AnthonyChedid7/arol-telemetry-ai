@@ -356,21 +356,20 @@ with st.sidebar:
         st.divider()
     session_key = (st.session_state.get("session_api_key") or "").strip()
     key_available = env_key or session_key.startswith("sk-ant-")
-    PLANNERS = {
-        "Claude (understands everyday wording)": "claude",
-        "Rules only (offline, exact phrasing)": "diagnostic",
-    }
-    ollama_host = (((config_mod.load().get("agent") or {}).get("llm") or {})
-                   .get("host") or "http://localhost:11434")
+    PLANNERS = {"Claude (Anthropic API)": "claude"}
+    ollama_host = (os.environ.get("AROL_OLLAMA_HOST")
+                   or ((config_mod.load().get("agent") or {}).get("llm") or {}).get("host")
+                   or "http://localhost:11434")
     ollama_models = _ollama_models(ollama_host)
     if ollama_models:
-        PLANNERS["Local model (Ollama, torque questions)"] = "llm"
-    default_planner = os.environ.get("AROL_PLANNER") or ("claude" if key_available else "diagnostic")
+        PLANNERS["Local model (Ollama, on this computer)"] = "ollama"
+    default_planner = os.environ.get("AROL_PLANNER") or (
+        "claude" if key_available or not ollama_models else "ollama")
     planner_labels = list(PLANNERS)
     planner_label = st.radio(
         "Question understanding", planner_labels,
         index=next((i for i, label in enumerate(planner_labels)
-                    if PLANNERS[label] == default_planner), 1),
+                    if PLANNERS[label] == default_planner), 0),
         key="planner",
     )
     planner_kind = PLANNERS[planner_label]
@@ -379,19 +378,19 @@ with st.sidebar:
                    "to word the answer, the computed results (counts and rates per head or day). "
                    "Raw telemetry rows stay where this page runs.")
         if not key_available:
-            st.warning("No API key is available, so the rules will answer. "
+            st.warning("No API key is available, so built-in rules answer instead of Claude. "
                        "Paste your own key above to use Claude.")
     ollama_model = None
-    if planner_kind == "llm":
+    if planner_kind == "ollama":
         ollama_model = st.selectbox(
             "Ollama model", [name for name, _ in ollama_models], key="ollama_model",
             help="Smallest first. Larger models understand more wordings but need more "
                  "memory: qwen2.5-coder:14b needs about 9 GB free, llama3.2:3b about 3 GB.")
         st.caption("Runs on this computer through Ollama; nothing is sent to the internet. "
-                   "It answers one torque analysis per question (statistics, distribution, "
-                   "trend, anomalies, or two heads compared) for a head and a time window. "
-                   "Anything else is refused rather than guessed. The first question loads "
-                   "the model and can take a minute.")
+                   "It gets the same instructions and tools as Claude. If its plan does not "
+                   "pass validation, built-in rules try the question and the route line says "
+                   "so. Answers are written from the computed results. The first question "
+                   "loads the model and can take a minute.")
     st.divider()
     st.caption(brand.DISCLAIMER)
 
@@ -461,10 +460,10 @@ if planner_kind == "claude":
     st.info(f"Ask in your own words, for example: 'which head performs worst on "
             f"{day:%b} {day.day}?' or 'is spindle 12 drifting in the morning?'. "
             "Check the 'Interpreted as' line.")
-elif planner_kind == "llm":
-    st.info(f"The local model answers torque questions of this form: 'Torque statistics "
-            f"for head 5 from {_at(0)} until {_at(min(1.0, span))}' (also distribution, "
-            "trend, anomalies, or 'Compare torque between H14 and H15 ...').")
+elif planner_kind == "ollama":
+    st.info("Ask in plain words, naming the head and, for torque, drift or anomaly "
+            f"questions, a time window (for example from {_at(0)} until {_at(span)}). "
+            "Check the 'Interpreted as' and route lines.")
 else:
     st.info("For a head diagnostic, give a bounded time window in your question. "
             "The selected machine above will be used if you do not name one.")
@@ -476,7 +475,7 @@ examples = {
     "Head 4 diagnostic — ask for window": "Is there any problem with head 4?",
     "Head 4 diagnostic — sample hour": (
         f"Is there any problem with head 4 from {_at(0)} until {_at(min(1.0, span))}?"),
-    "Torque statistics for head 5 (works with the local model)": (
+    "Torque statistics for head 5": (
         f"Torque statistics for head 5 for machine {machine} from {_at(0)} until {_at(min(1.0, span))}"),
     "Torque summary and distribution": (
         "Summarize torque and show its distribution with 10 bins "
@@ -540,10 +539,10 @@ if st.button("Analyze", type="primary"):
         if planner_kind == "claude" and not env_key and session_key.startswith("sk-ant-"):
             # In memory for this call only; config files can never hold a key.
             cfg["agent"].setdefault("claude", {})["session_api_key"] = session_key
-        if planner_kind == "llm":
-            # The chosen model, with no silent switch to the rules: a refusal is shown as one.
+        if planner_kind == "ollama":
+            # The chosen model; a rules fallback is labelled on the route line.
             cfg["agent"].setdefault("llm", {}).update(
-                model=ollama_model, fallback_to_rules=False,
+                model=ollama_model, host=ollama_host, fallback_to_rules=True,
                 timeout_seconds=max(180, float(cfg["agent"]["llm"].get("timeout_seconds", 60))))
 
         try:
@@ -614,8 +613,8 @@ if payload is not None:
         st.markdown(f"<div class='interp'><b>Interpreted as:</b> {line}</div>",
                     unsafe_allow_html=True)
     route = payload["planner"]
-    if route == "llm" and ollama_model:
-        route = f"local model {ollama_model} (Ollama)"
+    if route.startswith("ollama") and ollama_model:
+        route = route.replace("ollama", f"local model {ollama_model} (Ollama)", 1)
     st.caption(f"Analysis route: {route}")
 
     # Everything else stays one click away for whoever wants to investigate.

@@ -105,9 +105,9 @@ Feb 1-5 data with Claude on 2026-10-19:
 Then open *Show details for further investigation* to show the key figures,
 the full six-section report, the trace and the downloads. To show uploads,
 choose *My own CSV files (this session only)* and load one daily CSV: it is
-analysed for that session only and never added to the shared data. Switch
-*Question understanding* to *Rules only* to show the offline backup (it
-answers the documented phrasings, such as the example list).
+analysed for that session only and never added to the shared data. On a laptop
+running Ollama, switch *Question understanding* to *Local model (Ollama, on
+this computer)* to show the same questions answered offline.
 
 For a fresh checkout with the original CSVs available locally, build a pool
 once with `python -m scripts.build_event_pool --help`; do not put raw telemetry

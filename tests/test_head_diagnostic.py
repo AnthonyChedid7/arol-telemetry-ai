@@ -157,9 +157,3 @@ def test_web_page_asks_for_window_then_shows_evidence(cfg, tmp_path, monkeypatch
     assert "result" not in app.session_state
     assert not [m for m in app.markdown if "class='answer'" in m.value]
 
-    app.text_area[0].input(SCOPED).run()
-    app.button[0].click().run()
-    assert "result" in app.session_state
-    app.sidebar.radio(key="planner").set_value("Claude (understands everyday wording)").run()
-    assert "result" not in app.session_state
-    assert not [m for m in app.markdown if "class='answer'" in m.value]
