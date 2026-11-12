@@ -73,7 +73,8 @@ def test_website_uses_demo_data_without_private_pool(monkeypatch, demo):
                             default_timeout=120).run()
     assert not app.exception, app.exception
     assert any("Demo data" in w.value for w in app.warning)
-    assert any("Selected machine: DEMO01" in c.value for c in app.caption)
+    assert any("DEMO01" in str(m.value) for m in app.sidebar.markdown)
+    assert not any("Selected machine" in c.value for c in app.caption)
     # Without a key the public page answers with the rules.
     assert app.sidebar.radio(key="planner").value.startswith("Claude")
     assert any("built-in rules answer" in w.value for w in app.sidebar.warning)

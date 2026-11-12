@@ -374,9 +374,6 @@ with st.sidebar:
     )
     planner_kind = PLANNERS[planner_label]
     if planner_kind == "claude":
-        st.caption("Sent to the Anthropic API: the question, the data's machine/time range and, "
-                   "to word the answer, the computed results (counts and rates per head or day). "
-                   "Raw telemetry rows stay where this page runs.")
         if not key_available:
             st.warning("No API key is available, so built-in rules answer instead of Claude. "
                        "Paste your own key above to use Claude.")
@@ -391,8 +388,6 @@ with st.sidebar:
                    "pass validation, built-in rules try the question and the route line says "
                    "so. Answers are written from the computed results. The first question "
                    "loads the model and can take a minute.")
-    st.divider()
-    st.caption(brand.DISCLAIMER)
 
 # --- main: data banner and question ------------------------------------------
 if manifest is None:
@@ -455,18 +450,6 @@ def _at(hours: float) -> str:
 
 # A whole real day can exceed the analysis event limit; the demo day stays below it.
 on_day = f"on {day.date().isoformat()}" if demo_mode else f"from {_at(0)} until {_at(span)}"
-st.caption(f"Selected machine: {machine} | Head diagnostic and scoped analytics (registered tools)")
-if planner_kind == "claude":
-    st.info(f"Ask in your own words, for example: 'which head performs worst on "
-            f"{day:%b} {day.day}?' or 'is spindle 12 drifting in the morning?'. "
-            "Check the 'Interpreted as' line.")
-elif planner_kind == "ollama":
-    st.info("Ask in plain words, naming the head and, for torque, drift or anomaly "
-            f"questions, a time window (for example from {_at(0)} until {_at(span)}). "
-            "Check the 'Interpreted as' and route lines.")
-else:
-    st.info("For a head diagnostic, give a bounded time window in your question. "
-            "The selected machine above will be used if you do not name one.")
 
 window = f"for machine {machine} from {_at(0)} until {_at(span)}"
 hint = (lambda text: f" ({text})") if demo_mode else (lambda text: "")

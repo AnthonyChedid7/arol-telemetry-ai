@@ -121,7 +121,8 @@ demo data, Claude and the rules) gave:
 ## The website
 
 Run it locally with `.venv/bin/streamlit run app/streamlit_app.py` from the
-repository root, or host it (below). The page has three parts.
+repository root, or host it (below). Step-by-step for a teammate's Windows laptop (keys, shared
+data, local model, demo questions): [docs/TEAMMATE-SETUP.md](docs/TEAMMATE-SETUP.md). The page has three parts.
 
 **Data to analyse** (sidebar). Depending on the configuration it offers:
 

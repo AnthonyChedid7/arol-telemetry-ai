@@ -122,9 +122,7 @@ def test_web_page_asks_for_window_then_shows_evidence(cfg, tmp_path, monkeypatch
     ).run()
     assert not app.exception
     # Elements are found by content: the branded page adds a header before them.
-    data_caption = next(c.value for c in app.caption if "Selected machine" in c.value)
-    assert "Selected machine: M1" in data_caption
-    assert "Head diagnostic and scoped analytics" in data_caption
+    assert any("M1" in str(m.value) for m in app.sidebar.markdown)
 
     app.session_state["output_dir"] = Path(tmp_path) / "web-runs"
     app.text_area[0].input(QUESTION).run()

@@ -2,7 +2,7 @@
 
 Navy + signal orange: navy for structure, orange for attention, green/red only
 for pass/fail meaning. The AROL logo (assets/arol_logo_white.png, white on
-transparent, from arol.com) is always shown with DISCLAIMER, because this is a
+transparent, from arol.com) is shown on the website; exported reports carry DISCLAIMER, because this is a
 student project for AROL, not an AROL product.
 """
 from __future__ import annotations
@@ -38,13 +38,12 @@ def logo_data_uri() -> str | None:
 
 
 def header_html(title: str = PRODUCT, subtitle: str = "") -> str:
-    """Navy header band with the logo, a title and the disclaimer."""
+    """Navy header band with the logo and a title."""
     logo = logo_data_uri()
     img = f'<img src="{logo}" alt="AROL logo" class="arol-logo">' if logo else ""
     sub = f'<div class="arol-sub">{subtitle}</div>' if subtitle else ""
     return (f'<div class="arol-header"><div class="arol-brand">{img}'
-            f'<div><div class="arol-title">{title}</div>{sub}</div></div>'
-            f'<div class="arol-disclaimer">{DISCLAIMER}</div></div>')
+            f'<div><div class="arol-title">{title}</div>{sub}</div></div></div>')
 
 
 HEADER_CSS = f"""
