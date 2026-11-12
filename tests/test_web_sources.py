@@ -74,3 +74,11 @@ def days_store(tmp_path):
         chunk.write_csv(path)
         pool_store.add_csv(store, tmp_path / "mirror", path)
     return store.root
+
+
+def test_sidebar_shows_the_dates_covered_and_no_key_box_when_a_key_is_set(app, days_store):
+    at = app(AROL_STORE_DIR=str(days_store), ANTHROPIC_API_KEY="sk-ant-test-not-real")
+    assert not at.exception
+    text = _sidebar_text(at)
+    assert "2026-02-01 20:00 to 2026-02-02 03:00" in text and "2 calendar days with data" in text
+    assert "Claude (optional)" not in text and not at.sidebar.text_input

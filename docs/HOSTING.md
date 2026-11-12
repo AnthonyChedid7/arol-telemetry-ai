@@ -105,14 +105,16 @@ The sidebar's **Data to analyse** offers:
 
 - **AROL telemetry (shared, stored)**: every day added to Supabase, for everyone
   using the site. Selected by default once a day is stored.
-- **My own CSV files (this session only)**: choose up to 7 daily CSVs of one
+- **My own CSV files (this session only)**: choose up to 60 daily CSVs (300 MB in all, about 5 real days) of one
   machine and click **Analyse these files**. They are converted for your
   browser session only, never added to the shared data, and deleted when the
   session ends (or with **Remove my files**). No password is needed. Use this to
   study a file without changing what others see.
 - **Demo data (synthetic)**: the made-up day with planted problems.
 
-The example questions follow the chosen data's dates.
+The example questions follow the chosen data's dates. Below the source, **Dates covered
+(UTC)** shows the first and last reading, the number of days with data and any
+missing day, so you can see what period an answer covers.
 
 ### Asking questions
 

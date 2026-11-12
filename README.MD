@@ -129,17 +129,34 @@ repository root, or host it (below). The page has three parts.
 | --- | --- |
 | Private event pool (this computer) | A local pool: `AROL_MANIFEST`, else the presentation pool, else the only pool under `data/event_pools/`. |
 | AROL telemetry (shared, stored) | Days added to the shared store (Supabase, or a local folder for testing) for everyone using the site. Re-read at most once a minute, so new days appear without a restart; **Check for new days** refreshes at once. |
-| My own CSV files (this session only) | Up to 7 daily CSVs of one machine, converted for that browser session only, never added to the shared data, deleted when the session ends. No password needed. |
+| My own CSV files (this session only) | Up to 60 daily CSVs of one machine (300 MB in all, about 5 real full days), converted for that browser session only, never added to the shared data, deleted when the session ends. No password needed. |
 | Demo data (synthetic) | The made-up day described above. |
 
 With a store configured, **Add a day to the shared data** (password-protected)
 checks, converts and stores one daily CSV. Days must be added in date order and
 belong to one machine; anything else is refused with nothing changed.
 
+Under the chosen data the sidebar shows the machine, the number of files,
+events and heads, and **Dates covered (UTC)**: the first and last reading, how
+many calendar days have data, and a warning naming any day in between without
+data. With a configured Anthropic key there is no key box in the sidebar; the
+box appears only when no key is configured, for a visitor's own key.
+
+**Test data (50 days).** `python -m scripts.build_test_days --pool` writes 50
+made-up daily CSVs for machine `TEST50` to `data/test_days/` (2026-03-01 to
+2026-04-20 with 2026-04-02 missing; one production hour a day, about 2 MB each)
+and builds `data/test_days_pool/`. Upload them under *My own CSV files*, or run
+the page with `AROL_MANIFEST=data/test_days_pool/manifest.json`. Planted signals:
+H09's reject rate rises from about 0.1 % to about 5 %; H21 has about 8 % rejects
+on 2026-03-10, 2026-03-25 and 2026-04-10; H14 drifts upward on 2026-03-30; H03
+has two 2.8 Nm closures on 2026-03-05; the machine idles 08:20-08:35 on
+2026-03-12. Nothing in them is AROL data.
+
 **Ask a question.** Claude (default when a key is available) or the rules
 (*Rules only*). The example list follows the chosen data's dates; on real data
 its windows are 12 hours, because a whole real day (about 1.15 M events) is
-above the row-level event limit.
+above the row-level event limit. Data with shorter days (such as the test data)
+gets windows inside the hours it covers.
 
 **Answer.** Every result starts with the direct answer: a sentence that answers
 exactly the question, plus the form it asked for (a chart for "plot ...", a
@@ -332,6 +349,18 @@ Then check that Ollama is running and the chosen tag appears in `ollama list`, a
 ```
 
 **Important:** `config.local.yaml` is not listed in the current `.gitignore`; keep local machine settings and any secrets out of commits. No API key is required for localhost Ollama. `--planner llm` is an **experimental torque planner** restricted to five verified single-tool torque analyses. Its existing scope validator rejects changed arguments, combined analyses, KPI questions, and head-health questions before data access. Transport fallback to rules, when enabled, is labelled in the trace. The website's head diagnostic is a separate evidence-based route and does not use this LLM mode.
+
+Questions it accepts (one analysis each, with a head and a date or `from ... until ...` window):
+`Average torque for head 5 on 2026-03-30` (also statistics, summary, minimum, maximum, standard deviation;
+optional `for successful closures`, `for status 65`, `for all closures`, `including No Load`),
+`Torque distribution for head 14 with 20 bins on ...`, `Torque trend for head 14 on ...` / `Is torque drifting ...`,
+`Find torque anomalies for head 3 on ...`, and `Compare torque between H14 and H15 on ...`.
+Combined analyses, rates, rankings and head diagnostics are refused before the model is called.
+Measured 2026-11-12 on the 50-day test data with `llama3.2:3b` (the only model installed here), three rounds:
+2 of 12 questions passed every round (torque statistics with an explicit `from ... until ...` window); the other
+10 were refused by the validator because the model sent wrong argument types or values. Earlier saved-proposal
+replays gave `qwen2.5-coder:14b` 9 of 10. Use the 14B model (`ollama pull qwen2.5-coder:14b`, about 9 GB) for
+anything beyond a quick check.
 
 ## Claude planner (everyday wording)
 

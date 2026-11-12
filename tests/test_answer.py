@@ -110,3 +110,28 @@ def test_compact_results_keep_summaries_and_shorten_series():
                                                          'rate_definitions': {'x': 'y'}}, 'meta': {}})]
     text = answer_mod.compact_results(results)
     assert '"sample_size":4764' in text and '"n_values":5000' in text and 'rate_definitions' not in text
+
+
+def _per_day(n_days=50, n_heads=36):
+    head = lambda i, rate: {'head_id': f'H{i:02d}', 'n_cap_present': 600, 'n_reject_cap_present': 1,
+                            'success_rate_cap_present': 1 - rate, 'reject_rate_cap_present': rate,
+                            'eligible_for_ranking': True, 'rank_lowest_success_first': i}
+    days = [{'date': f'day-{d:02d}', 'heads': [head(i, 0.001 * i + d * 1e-5) for i in range(1, n_heads + 1)],
+             'highest_failure_head': head(n_heads, 0.04),
+             'highest_success_tied_heads': [f'H{i:02d}' for i in range(1, 30)]} for d in range(n_days)]
+    return [('head_success_by_day', {'ok': True, 'result': {'days': days}, 'meta': {}})]
+
+
+def test_compact_results_keep_every_day_and_the_asked_heads():
+    import json
+    results = _per_day()
+    for question, rows in (('Which days did H21 have a failure rate above 5%?', 1),
+                           ('Which head had the highest failure rate on each day?', None)):
+        text = answer_mod.compact_results(results, limit=40_000, query=question)
+        days = json.loads(text)[0]['result']['days']
+        assert len(days) == 50 and not any(isinstance(d, str) for d in days)
+        if rows:
+            assert [h['head_id'] for h in days[49]['heads']] == ['H21']
+        else:
+            assert days[0]['heads']['n_heads'] == 36
+        assert 'eligible_for_ranking' not in text and '29 heads tied' in text

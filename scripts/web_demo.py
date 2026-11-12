@@ -95,8 +95,47 @@ def _demo_manifest() -> str:
 CACHE_ROOT = Path(os.environ.get("AROL_CACHE_DIR") or ROOT / "data")
 STORED_DIR = CACHE_ROOT / "stored_pool"
 SESSION_ROOT = CACHE_ROOT / "session_pools"
-MAX_SESSION_FILES = 7
+MAX_SESSION_FILES = 60
+# All files of one session together; a real full-day export is about 57 MB, so
+# this is about 5 real days, or all 50 one-hour test days.
+MAX_SESSION_MB = 300
 store = pool_store.store_from_env()
+
+
+def _date_ranges(dates) -> str:
+    """'2026-02-03, 2026-02-07 to 2026-02-09' for a sorted list of dates."""
+    runs, start, previous = [], None, None
+    for day in dates:
+        if start is None:
+            start = previous = day
+        elif day == previous + timedelta(days=1):
+            previous = day
+        else:
+            runs.append((start, previous))
+            start = previous = day
+    if start is not None:
+        runs.append((start, previous))
+    return ", ".join(a.isoformat() if a == b else f"{a.isoformat()} to {b.isoformat()}" for a, b in runs)
+
+
+def _dates_covered(manifest: dict) -> dict | None:
+    """The interval the data covers, how many calendar days have data, and days without any."""
+    spans = [(datetime.fromisoformat(p["ts_min"]), datetime.fromisoformat(p["ts_max"]))
+             for p in manifest.get("partitions", []) if p.get("ts_min") and p.get("ts_max")]
+    if not spans:
+        return None
+    first, last = min(a for a, _ in spans), max(b for _, b in spans)
+    with_data = set()
+    for a, b in spans:
+        day = a.date()
+        while day <= b.date():
+            with_data.add(day)
+            day += timedelta(days=1)
+    every = [first.date() + timedelta(days=i) for i in range((last.date() - first.date()).days + 1)]
+    missing = [day for day in every if day not in with_data]
+    return dict(span=f"{first:%Y-%m-%d %H:%M} to {last:%Y-%m-%d %H:%M}",
+                days=f"{len(with_data)} calendar day{'' if len(with_data) == 1 else 's'} with data",
+                missing=_date_ranges(missing))
 
 
 # Re-read the store at most once a minute, so days added elsewhere (another
@@ -188,25 +227,34 @@ machine = summary.get("machine_id")
 with st.sidebar:
     if manifest:
         files = summary.get("files", 0)
+        covered = _dates_covered(manifest)
         st.markdown(
             f"Machine `{machine}`  \n"
-            f"{(summary.get('ts_min') or '?')[:16]} to {(summary.get('ts_max') or '?')[:16]} UTC  \n"
             f"{files} file{'' if files == 1 else 's'}, "
             f"{summary.get('observed_events', 0):,} observed events, {summary.get('heads', '?')} heads")
+        if covered:
+            st.markdown(f"**Dates covered** (UTC)  \n{covered['span']}  \n{covered['days']}")
+            if covered["missing"]:
+                st.warning("No data on " + covered["missing"] + ".")
     if session_mode:
         st.markdown("**Your files**")
         notice = st.session_state.pop("session_notice", None)
         if notice:
             st.success(notice)
-        st.caption("Up to 7 daily CSVs of one machine (AROL export names). They are "
+        st.caption(f"Up to {MAX_SESSION_FILES} daily CSVs of one machine (AROL export names), "
+                   f"{MAX_SESSION_MB} MB in all. They are "
                    "converted on this server, visible only to you, and deleted when "
                    "the session ends. Nothing is added to the shared data.")
         round_ = st.session_state.get("session_round", 0)
         session_files = st.file_uploader("Daily telemetry CSV files", type=["csv"],
                                   accept_multiple_files=True, key=f"session_files_{round_}")
         if st.button("Analyse these files", disabled=not session_files, type="primary"):
+            total_mb = sum(f.size for f in session_files) / 1e6
             if len(session_files) > MAX_SESSION_FILES:
                 st.error(f"Choose at most {MAX_SESSION_FILES} files at a time.")
+            elif total_mb > MAX_SESSION_MB:
+                st.error(f"These files add up to {total_mb:,.0f} MB; at most {MAX_SESSION_MB} MB "
+                         "can be analysed in one session. Choose fewer days.")
             else:
                 try:
                     with st.spinner(f"Checking and converting {len(session_files)} file(s)..."):
@@ -271,12 +319,10 @@ with st.sidebar:
                                 f"{entry['observed_events']:,} events.")
                             st.rerun()
     st.divider()
-    st.markdown("### Claude (optional)")
     env_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
-    if env_key:
-        st.caption("Using the Anthropic key configured for this app "
-                   "(environment variable, the project's .env file or the host's secrets).")
-    else:
+    # With a configured key there is nothing to set here, so nothing is shown.
+    if not env_key:
+        st.markdown("### Claude (optional)")
         typed = st.text_input(
             "Your Anthropic API key", type="password", key="session_api_key",
             placeholder="sk-ant-...",
@@ -286,10 +332,10 @@ with st.sidebar:
             st.warning("That does not look like an Anthropic key (they start with 'sk-ant-').")
         st.caption("No key? Everything works with the offline rules and the example "
                    "questions. Keys: console.anthropic.com. You pay for your own "
-                   "questions (well under one cent each).")
+                   "questions (a few cents each).")
+        st.divider()
     session_key = (st.session_state.get("session_api_key") or "").strip()
     key_available = env_key or session_key.startswith("sk-ant-")
-    st.divider()
     PLANNERS = {
         "Claude (understands everyday wording)": "claude",
         "Rules only (offline, exact phrasing)": "diagnostic",
@@ -341,15 +387,39 @@ def _example_day(summary: dict) -> datetime:
     return day
 
 
-day = _example_day(summary) if summary.get("ts_min") else datetime(2026, 2, 1)
+def _example_window(manifest: dict, summary: dict) -> tuple[datetime, float]:
+    """Start and length (hours, at most 12) of a stretch with data for the examples.
+
+    Files covering a full day give the midnight after the first file and 12 h,
+    as before; short files (one production hour a day) give that file's own
+    hours, so every example window contains data.
+    """
+    spans = sorted((datetime.fromisoformat(p["ts_min"]), datetime.fromisoformat(p["ts_max"]))
+                   for p in manifest.get("partitions", []) if p.get("ts_min") and p.get("ts_max"))
+    day = _example_day(summary)
+    for start, end in spans:
+        if start <= day + timedelta(hours=12) and end >= day:
+            hours = (min(end, day + timedelta(hours=12)) - max(start, day)).total_seconds() / 3600
+            if hours >= 11:
+                return day, 12.0
+    if not spans:
+        return day, 12.0
+    start, end = spans[1] if len(spans) > 1 else spans[0]
+    start = start.replace(minute=0, second=0, microsecond=0)
+    hours = max(1.0, min(12.0, -(-(end - start).total_seconds() // 3600)))
+    return start, hours
 
 
-def _at(hours: int) -> str:
+day, span = (_example_window(manifest, summary) if summary.get("ts_min")
+             else (datetime(2026, 2, 1), 12.0))
+
+
+def _at(hours: float) -> str:
     return (day + timedelta(hours=hours)).isoformat()
 
 
 # A whole real day can exceed the analysis event limit; the demo day stays below it.
-on_day = f"on {day.date().isoformat()}" if demo_mode else f"from {_at(0)} until {_at(12)}"
+on_day = f"on {day.date().isoformat()}" if demo_mode else f"from {_at(0)} until {_at(span)}"
 st.caption(f"Selected machine: {machine} | Head diagnostic and scoped analytics (registered tools)")
 if planner_kind == "claude":
     st.info(f"Ask in your own words, for example: 'which head performs worst on "
@@ -359,13 +429,13 @@ else:
     st.info("For a head diagnostic, give a bounded time window in your question. "
             "The selected machine above will be used if you do not name one.")
 
-window = f"for machine {machine} from {_at(0)} until {_at(12)}"
+window = f"for machine {machine} from {_at(0)} until {_at(span)}"
 hint = (lambda text: f" ({text})") if demo_mode else (lambda text: "")
 examples = {
     "Write my own question": "",
     "Head 4 diagnostic — ask for window": "Is there any problem with head 4?",
     "Head 4 diagnostic — sample hour": (
-        f"Is there any problem with head 4 from {_at(0)} until {_at(1)}?"),
+        f"Is there any problem with head 4 from {_at(0)} until {_at(min(1.0, span))}?"),
     "Torque summary and distribution": (
         "Summarize torque and show its distribution with 10 bins "
         f"{window} for head 5 for successful closures"
@@ -379,11 +449,11 @@ examples = {
     "Head 7 versus its peers": (
         f"Compare head 7 with peers by cap-present success rate for machine {machine} {on_day}"),
     "Torque trend for head 12" + hint("demo: drift"): (
-        f"Show torque trend for head 12 for machine {machine} from {_at(6)} until {_at(12)}"),
+        f"Show torque trend for head 12 for machine {machine} from {_at(span / 2)} until {_at(span)}"),
     "Torque anomalies for head 3": (
         f"Find torque anomalies for head 3 for machine {machine} {on_day}"),
     "Machine idle periods": (
-        f"Machine idle for machine {machine} from {_at(0)} until {_at(6)}"),
+        f"Machine idle for machine {machine} from {_at(0)} until {_at(span / 2)}"),
 }
 
 st.markdown("#### Ask a question")
@@ -490,8 +560,12 @@ if payload is not None:
                    "Answer written from the computed results.")
     interpreted = re.search(r"\*Interpreted as:\*\s*(.+)", report)
     if interpreted:
-        st.markdown(f"<div class='interp'><b>Interpreted as:</b> "
-                    f"{interpreted.group(1).replace('`', '')}</div>", unsafe_allow_html=True)
+        line = interpreted.group(1).replace('`', '')
+        if answer and not answer.get("table") and answer.get("artifact") != "chart":
+            # "Shown: ..." describes a table or chart; none is on screen here.
+            line = re.sub(r"\s*Shown:.*$", "", line)
+        st.markdown(f"<div class='interp'><b>Interpreted as:</b> {line}</div>",
+                    unsafe_allow_html=True)
     st.caption(f"Analysis route: {payload['planner']}")
 
     # Everything else stays one click away for whoever wants to investigate.

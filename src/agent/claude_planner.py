@@ -390,7 +390,7 @@ class ClaudePlanner(Planner):
                    f"<interpretation>\n{getattr(plan, 'interpretation', '')}\n</interpretation>\n\n"
                    f"<available_forms>{', '.join(forms)}</available_forms>\n\n"
                    f"<data_range>{(meta or {}).get('ts_min')} to {(meta or {}).get('ts_max')} (UTC as recorded)</data_range>\n\n"
-                   f"<results>\n{compact_results(results)}\n</results>\n\n"
+                   f"<results>\n{compact_results(results, query=query)}\n</results>\n\n"
                    f"<built_in_answer>\n{draft.get('sentence', '')}\n(form: {draft.get('artifact')}, metric: {draft.get('metric')})\n</built_in_answer>")
         response = self._call_answer(content)
         usage = getattr(response, "usage", None)

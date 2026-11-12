@@ -393,23 +393,65 @@ def _compact(node, max_items):
     return node
 
 
-def compact_results(results, limit=80_000):
+def _named_heads(query):
+    """Heads the question names ("H21", "head 5"), as head ids."""
+    return {f"H{int(n):02d}" for n in re.findall(r"\b(?:h|head\s*[-#]?\s*)(\d{1,3})\b", query or "", re.I)}
+
+
+_HEAD_FIELDS = ("head_id", "n_cap_present", "n_reject_cap_present",
+                "success_rate_cap_present", "reject_rate_cap_present")
+
+
+def _head_rows(node, keep):
+    """Per-head row lists inside the result, reduced to the heads in keep
+    (None: drop the rows and keep only how many there were). Head entries keep
+    their counts and rates only, and long tie lists become their size."""
+    if isinstance(node, dict):
+        if "head_id" in node and "success_rate_cap_present" in node:
+            return {k: node[k] for k in _HEAD_FIELDS if k in node}
+        out = {}
+        for k, v in node.items():
+            if (k == "heads" and isinstance(v, list) and v
+                    and all(isinstance(r, dict) and "head_id" in r for r in v)):
+                out[k] = ([_head_rows(r, keep) for r in v if r["head_id"] in keep] if keep is not None
+                          else {"n_heads": len(v), "omitted": "per-head rows left out for length"})
+            elif k.endswith("_tied_heads") and isinstance(v, list) and len(v) > 6:
+                out[k] = (sorted(set(v) & keep) if keep else []) + [f"... {len(v)} heads tied in all"]
+            else:
+                out[k] = _head_rows(v, keep)
+        return out
+    if isinstance(node, list):
+        return [_head_rows(v, keep) for v in node]
+    return node
+
+
+def compact_results(results, limit=80_000, query=""):
     """Tool results as compact JSON for the answer writer: summary values only.
 
     Long per-reading series (trend points) are reduced to their length and ends;
-    no raw telemetry rows are part of any tool result.
+    no raw telemetry rows are part of any tool result. When the question names
+    heads, per-head rows of other heads are left out, so every day of a long
+    per-day result still fits; otherwise per-head rows go before any day does.
     """
     import json
-    for max_items in (400, 120, 40):
-        out = []
-        for name, reply in results:
-            if not reply.get("ok"):
-                out.append({"tool": name, "error": reply.get("error")})
-                continue
-            out.append({"tool": name, "result": _compact(reply.get("result"), max_items)})
-        text = json.dumps(out, separators=(",", ":"), default=str)
-        if len(text) <= limit:
-            return text
+    named = _named_heads(query)
+    variants = [named] if named else []
+    variants += [False, None]  # False: rows as they are; None: rows dropped
+    text = "[]"
+    for keep in variants:
+        for max_items in (400, 120, 40):
+            out = []
+            for name, reply in results:
+                if not reply.get("ok"):
+                    out.append({"tool": name, "error": reply.get("error")})
+                    continue
+                result = reply.get("result")
+                if keep is not False:
+                    result = _head_rows(result, keep)
+                out.append({"tool": name, "result": _compact(result, max_items)})
+            text = json.dumps(out, separators=(",", ":"), default=str)
+            if len(text) <= limit:
+                return text
     return text[:limit]
 
 
