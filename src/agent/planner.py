@@ -125,6 +125,11 @@ def _to_ollama_tools(specs: list[dict]) -> list[dict]:
     ]
 
 
+# A plain client name: some proxies in front of a remote Ollama host (for example
+# a cloud GPU pod) refuse requests that carry Python's default "Python-urllib".
+USER_AGENT = "arol-telemetry-planner"
+
+
 class LLMPlanner(Planner):
     """Validate model proposals against the verified torque request grammar.
 
@@ -165,7 +170,7 @@ class LLMPlanner(Planner):
         request = urllib.request.Request(
             f"{self.host}/api/chat",
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             return json.loads(response.read().decode("utf-8"))
@@ -175,7 +180,8 @@ class LLMPlanner(Planner):
         import json
         import urllib.request
         try:
-            with urllib.request.urlopen(f"{self.host}/api/tags", timeout=3) as response:
+            tags = urllib.request.Request(f"{self.host}/api/tags", headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(tags, timeout=3) as response:
                 names = {item.get("name", "") for item in json.loads(response.read()).get("models", [])}
             expected = self.model if ":" in self.model else self.model + ":latest"
             return expected in names or self.model in names

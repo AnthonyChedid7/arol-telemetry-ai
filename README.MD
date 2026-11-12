@@ -356,11 +356,19 @@ optional `for successful closures`, `for status 65`, `for all closures`, `includ
 `Torque distribution for head 14 with 20 bins on ...`, `Torque trend for head 14 on ...` / `Is torque drifting ...`,
 `Find torque anomalies for head 3 on ...`, and `Compare torque between H14 and H15 on ...`.
 Combined analyses, rates, rankings and head diagnostics are refused before the model is called.
-Measured 2026-11-12 on the 50-day test data with `llama3.2:3b` (the only model installed here), three rounds:
-2 of 12 questions passed every round (torque statistics with an explicit `from ... until ...` window); the other
-10 were refused by the validator because the model sent wrong argument types or values. Earlier saved-proposal
-replays gave `qwen2.5-coder:14b` 9 of 10. Use the 14B model (`ollama pull qwen2.5-coder:14b`, about 9 GB) for
-anything beyond a quick check.
+Measured 2026-11-12 on the 50-day test data, 14 questions (12 supported, 2 refused by design), three rounds per
+model, Ollama 0.40.16 on a rented RTX 4090 pod (`agent.llm.host` set to the pod's URL):
+
+| Model | Supported questions answered | Same every round |
+| --- | --- | --- |
+| `qwen2.5-coder:14b` (the configured default) | 11 of 12 | yes |
+| `llama3.2:3b` | 1 of 12 | yes |
+
+The one `qwen2.5-coder:14b` miss was `... for all closures`, refused because the model's arguments differed from the
+requested scope; `llama3.2:3b` mostly sent wrong argument types (`status_filter`, `bins`, `head_id`). The two
+out-of-scope questions were refused without calling the model. Each answer takes about 2-3 s once the model is
+loaded (the first call loads it, about 75 s). On a laptop, the 14B model needs about 9 GB of free memory; with
+less, run Ollama on a GPU machine and set `agent.llm.host` to its address.
 
 ## Claude planner (everyday wording)
 
