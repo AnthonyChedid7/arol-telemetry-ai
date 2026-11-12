@@ -82,3 +82,46 @@ def test_sidebar_shows_the_dates_covered_and_no_key_box_when_a_key_is_set(app, d
     text = _sidebar_text(at)
     assert "2026-02-01 20:00 to 2026-02-02 03:00" in text and "2 calendar days with data" in text
     assert "Claude (optional)" not in text and not at.sidebar.text_input
+
+
+def test_local_model_option_only_when_ollama_answers(app, days_store, monkeypatch):
+    import json as json_mod
+    import urllib.request
+
+    import streamlit as st
+
+    class Reply:
+        def __init__(self, body):
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return self.body
+
+    def no_ollama(request, timeout=0):
+        raise OSError("connection refused")
+
+    st.cache_data.clear()
+    monkeypatch.setattr(urllib.request, "urlopen", no_ollama)
+    at = app(AROL_STORE_DIR=str(days_store))
+    assert not at.exception
+    assert not any("Ollama" in o for o in at.sidebar.radio(key="planner").options)
+
+    models = {"models": [{"name": "qwen2.5-coder:14b", "size": 9_000_000_000},
+                         {"name": "llama3.2:3b", "size": 2_000_000_000}]}
+    st.cache_data.clear()
+    monkeypatch.setattr(urllib.request, "urlopen",
+                        lambda request, timeout=0: Reply(json_mod.dumps(models).encode()))
+    at = app(AROL_STORE_DIR=str(days_store))
+    label = "Local model (Ollama, torque questions)"
+    assert label in at.sidebar.radio(key="planner").options
+    at.sidebar.radio(key="planner").set_value(label).run()
+    assert not at.exception
+    box = at.sidebar.selectbox(key="ollama_model")
+    assert box.options == ["llama3.2:3b", "qwen2.5-coder:14b"] and box.value == "llama3.2:3b"
+    st.cache_data.clear()

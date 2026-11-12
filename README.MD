@@ -152,8 +152,9 @@ on 2026-03-10, 2026-03-25 and 2026-04-10; H14 drifts upward on 2026-03-30; H03
 has two 2.8 Nm closures on 2026-03-05; the machine idles 08:20-08:35 on
 2026-03-12. Nothing in them is AROL data.
 
-**Ask a question.** Claude (default when a key is available) or the rules
-(*Rules only*). The example list follows the chosen data's dates; on real data
+**Ask a question.** Claude (default when a key is available), the rules
+(*Rules only*), or, when Ollama runs on the same computer, a local model (see
+[Optional local LLM](#optional-local-llm)). The example list follows the chosen data's dates; on real data
 its windows are 12 hours, because a whole real day (about 1.15 M events) is
 above the row-level event limit. Data with shorter days (such as the test data)
 gets windows inside the hours it covers.
@@ -349,6 +350,8 @@ Then check that Ollama is running and the chosen tag appears in `ollama list`, a
 ```
 
 **Important:** `config.local.yaml` is not listed in the current `.gitignore`; keep local machine settings and any secrets out of commits. No API key is required for localhost Ollama. `--planner llm` is an **experimental torque planner** restricted to five verified single-tool torque analyses. Its existing scope validator rejects changed arguments, combined analyses, KPI questions, and head-health questions before data access. Transport fallback to rules, when enabled, is labelled in the trace. The website's head diagnostic is a separate evidence-based route and does not use this LLM mode.
+
+**On the website.** When the page runs on a computer where Ollama answers (at `agent.llm.host`, default `http://localhost:11434`), *Question understanding* offers a third choice, **Local model (Ollama, torque questions)**, with a box listing the installed models, smallest first (so `llama3.2:3b` before `qwen2.5-coder:14b`). Nothing is sent to the internet, and a question it cannot verify is refused, never passed to the rules. The example *Torque statistics for head 5 (works with the local model)* is ready to run. The hosted site has no Ollama next to it, so it does not show the option.
 
 Questions it accepts (one analysis each, with a head and a date or `from ... until ...` window):
 `Average torque for head 5 on 2026-03-30` (also statistics, summary, minimum, maximum, standard deviation;
